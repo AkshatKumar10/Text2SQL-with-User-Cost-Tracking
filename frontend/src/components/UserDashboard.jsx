@@ -32,6 +32,7 @@ export function UserDashboard({ user, onRequireLogin }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const API_URL = import.meta.env.VITE_API_URL;
   useEffect(() => {
     if (user?.id) {
       fetchDashboard();
@@ -45,7 +46,7 @@ export function UserDashboard({ user, onRequireLogin }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/user/dashboard?user_id=${user.id}`);
+      const res = await fetch(`${API_URL}/api/user/dashboard?user_id=${user.id}`);
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.detail || 'Failed to fetch dashboard telemetry');

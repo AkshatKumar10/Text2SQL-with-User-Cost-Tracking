@@ -559,7 +559,7 @@ export function App() {
   const [pendingScroll, setPendingScroll] = useState(null);
 
   const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-
+  const API_URL = import.meta.env.VITE_API_URL;
 
   // --------------------------------------------------
   // STARTERS
@@ -632,7 +632,7 @@ export function App() {
 
   const fetchHealth = async () => {
     try {
-      const res = await fetch('/api/health');
+      const res = await fetch(`${API_URL}/api/health`);
 
       if (res.ok) {
         const data = await res.json();
@@ -646,7 +646,7 @@ export function App() {
 
   const fetchSchema = async () => {
     try {
-      const res = await fetch('/api/schema');
+      const res = await fetch(`${API_URL}/api/schema`);
 
       if (res.ok) {
         const data = await res.json();
@@ -665,7 +665,7 @@ export function App() {
   const verifyUserSession = async (token) => {
     try {
       const res = await fetch(
-        `/api/auth/me?token=${encodeURIComponent(token)}`
+        `${API_URL}/api/auth/me?token=${encodeURIComponent(token)}`
       );
 
       if (res.ok) {
@@ -684,7 +684,7 @@ export function App() {
 
   const handleGoogleSuccess = async (credentialResponse) => {
     try {
-      const res = await fetch('/api/auth/google', {
+      const res = await fetch(`${API_URL}/api/auth/google`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -792,7 +792,7 @@ export function App() {
 
   const handleDeleteTable = async (tableName) => {
     try {
-      const response = await fetch('/api/table', {
+      const response = await fetch(`${API_URL}/api/table`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -839,7 +839,7 @@ export function App() {
     };
 
     try {
-      const res = await fetch('/api/query', {
+      const res = await fetch(`${API_URL}/api/query`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
