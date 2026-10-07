@@ -9,3 +9,4 @@ openpyxl
 pyjwt
 requests
 python-dotenv
+langchain-google-genai
