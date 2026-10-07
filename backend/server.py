@@ -15,7 +15,7 @@ import jwt
 import requests
 from database import (
     get_schema, init_db, run_sql, DB_PATH, APP_DB_PATH, import_df, clean_table,
-    ensure_meta_tables, get_or_create_user, get_user_by_id, log_user_query, get_user_dashboard_stats
+    ensure_meta_tables, get_or_create_user, get_user_by_id, log_user_query, get_user_dashboard_stats,delete_table
 )
 from agents.workflow import build_workflow
 from langfuse.langchain import CallbackHandler
@@ -59,6 +59,9 @@ class SqlReq(BaseModel):
 class GoogleAuthReq(BaseModel):
     credential: Optional[str] = None
     id_token: Optional[str] = None
+
+class DeleteTableReq(BaseModel):
+    table_name: str
 
 @app.get("/api/health")
 def health():
@@ -167,6 +170,7 @@ def fetch_schema():
         cols = [{"cid": r[0], "name": r[1], "type": r[2], "notnull": bool(r[3]), "pk": bool(r[5])} for r in cur.fetchall()]
         
         df = pd.read_sql_query(f"SELECT * FROM `{tbl}` LIMIT 5;", conn)
+        df = df.astype(object).where(pd.notna(df), None)
         rows = df.to_dict(orient="records")
         
         cur.execute(f"SELECT count(*) FROM `{tbl}`")
@@ -221,40 +225,104 @@ async def upload(
         raw_name = custom_table_name.strip() if custom_table_name and custom_table_name.strip() else os.path.splitext(fname)[0]
         tbl = clean_table(raw_name)
 
-        res = import_df(df, tbl, replace=True)
-        return {
-            "status": "success",
-            "message": f"Created table '{res['table_name']}' with {res['rows_imported']} rows.",
-            "table_name": res["table_name"],
-            "rows_imported": res["rows_imported"],
-            "columns": res["columns"]
-        }
+        try:
+            res = import_df(df, tbl)
+
+            return {
+                "status": "success",
+                "message": f"Created table '{res['table_name']}' with {res['rows_imported']} rows.",
+                "table_name": res["table_name"],
+                "rows_imported": res["rows_imported"],
+                "columns": res["columns"]
+            }
+
+        except ValueError as e:
+            raise HTTPException(
+                status_code=409,
+                detail=str(e)
+            )
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"File process error: {str(e)}")
 
-@app.post("/api/reset-db")
-def reset_db():
+@app.delete("/api/table")
+def delete_table_endpoint(req: DeleteTableReq):
     try:
-        init_db()
-        return {"status": "success", "message": "Database reset state successfully."}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        deleted = delete_table(req.table_name)
 
+        if not deleted:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Table '{req.table_name}' does not exist."
+            )
+
+        return {
+            "status": "success",
+            "message": f"Table '{req.table_name}' deleted successfully.",
+            "table_name": req.table_name
+        }
+
+    except HTTPException:
+        raise
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete table: {str(e)}"
+        )
+        
 @app.post("/api/execute-sql")
 def exec_sql(req: SqlReq):
+    sql = req.sql.strip()
+
+    if not sql:
+        raise HTTPException(
+            status_code=400,
+            detail="SQL query cannot be empty."
+        )
+
+    normalized = sql.rstrip(";").strip()
+
+    if not re.match(
+        r"^(SELECT|WITH|EXPLAIN)\b",
+        normalized,
+        re.IGNORECASE
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "The SQL Console is read-only. "
+                "Only SELECT, WITH, and EXPLAIN queries are allowed."
+            )
+        )
+
     try:
-        df = run_sql(req.sql)
+        df = run_sql(sql)
+        df = df.astype(object).where(
+            pd.notna(df),
+            None
+        )
+
         recs = df.to_dict(orient="records")
         cols = list(df.columns)
+
         return {
             "columns": cols,
             "records": recs,
-            "row_count": len(df)
+            "row_count": len(recs),
         }
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
 
 @app.post("/api/query")
 def run_query(req: QueryReq):
@@ -267,6 +335,8 @@ def run_query(req: QueryReq):
     init_state = {
         "question": req.question.strip(),
         "schema": schema_txt,
+        "is_answerable": False,
+        "answerability_reason": "",
         "sql_query": "",
         "is_valid": False,
         "error_message": None,
@@ -355,6 +425,8 @@ def run_query(req: QueryReq):
         return {
             "question": req.question,
             "latency": dt_seconds,
+            "is_answerable": res.get("is_answerable", False),
+            "answerability_reason": res.get("answerability_reason", ""),
             "sql_query": res.get("sql_query", ""),
             "is_valid": res.get("is_valid", False),
             "retry_count": res.get("retry_count", 0),

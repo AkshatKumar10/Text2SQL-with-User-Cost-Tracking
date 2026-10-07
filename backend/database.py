@@ -171,7 +171,7 @@ def format_datetime(value):
     except Exception:
         return value
 
-def import_df(df: pd.DataFrame, tbl_name: str, replace: bool = True) -> dict:
+def import_df(df: pd.DataFrame, tbl_name: str) -> dict:
     """Imports a pandas DataFrame as a table in ecommerce.db."""
     if not os.path.exists(DB_PATH):
         init_db()
@@ -190,8 +190,22 @@ def import_df(df: pd.DataFrame, tbl_name: str, replace: bool = True) -> dict:
     df.columns = new_cols
 
     conn = sqlite3.connect(DB_PATH)
-    if_exists = 'replace' if replace else 'append'
-    df.to_sql(tbl, conn, if_exists=if_exists, index=False)
+    cur = conn.cursor()
+
+    cur.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        (tbl,)
+    )
+    existing = cur.fetchone()
+
+    if existing:
+        conn.close()
+        raise ValueError(
+            f"Table '{tbl}' already exists. Please enter a new name in the 'SQL Table Name' field and try again."
+        )
+
+    df.to_sql(tbl, conn, if_exists="fail", index=False)
+
     conn.commit()
     conn.close()
 
@@ -265,6 +279,41 @@ def log_user_query(user_id: int, user_email: str, question: str, sql_query: str,
     qid = cur.lastrowid
     conn.close()
     return qid
+
+def delete_table(table_name: str) -> bool:
+    """Deletes a user-created table from ecommerce.db."""
+    protected = {
+        "customers",
+        "products",
+        "orders",
+        "order_items",
+    }
+
+    if table_name in protected:
+        raise ValueError(
+            f"Table '{table_name}' is a built-in sample table and cannot be deleted."
+        )
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT name
+        FROM sqlite_master
+        WHERE type = 'table'
+          AND name = ?
+        """,
+        (table_name,)
+    )
+
+    existing = cur.fetchone()
+    if not existing:
+        conn.close()
+        return False
+
+    cur.execute(f'DROP TABLE "{table_name}"')
+    conn.commit()
+    conn.close()
+    return True
 
 def get_user_dashboard_stats(user_id: int) -> dict:
     ensure_meta_tables()

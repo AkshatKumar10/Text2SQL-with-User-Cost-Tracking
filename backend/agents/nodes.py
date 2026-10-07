@@ -69,27 +69,172 @@ def add_usage(state: AgentState, usage: Dict[str, int]) -> Dict[str, int]:
         "total_tokens": state.get("total_tokens", 0) + usage["total_tokens"],
     }
 
-# SQL Generator Node
-def gen_node(state: AgentState) -> Dict[str, Any]:
-    llm = get_llm()
-    prompt = f"""You are an expert SQL Data Analyst writing queries for SQLite.
-Given the SQLite Database Schema below, write a single clean SQLite SELECT query that answers the user's question.
+def question_check_node(state: AgentState) -> Dict[str, Any]:
+    """
+    Determines whether the user's question can actually be answered
+    using the available database schema.
+    """
 
-### Rules:
-1. Return ONLY the raw SQL query. Do not provide explanations or markdown.
-2. Use ONLY the table and column names specified in the schema.
-3. Use appropriate JOINs and aggregate functions where necessary.
-4. Only generate read-only SELECT queries.
+    llm = get_llm()
+
+    prompt = f"""
+You are a strict database question analyzer.
+
+Your job is to determine whether the user's question can be answered
+USING ONLY the provided SQLite database schema.
+
+You MUST NOT assume information that is not represented in the schema.
 
 Database Schema:
 {state['schema']}
 
-User Question: {state['question']}
+User Question:
+{state['question']}
+
+Rules:
+
+1. The question must be answerable using information contained in the
+   database schema or relationships explicitly represented by the tables.
+
+2. Do NOT treat unrelated database values as an answer.
+
+3. Do NOT reinterpret the user's question into a different question.
+
+4. Personal, external, or missing information must be rejected.
+
+5.  Return NOT_ANSWERABLE if the question asks about:
+   - personal information not present in the database
+   - people, objects, facts, or concepts outside the database
+   - information that cannot be derived from the available columns
+   - general knowledge
+   - conversational/personal questions
+   - anything where generating SQL would require inventing data
+
+6. A question is answerable only if there is a reasonable mapping between
+   the requested information and the database schema.
+
+7. Be conservative.
+   If there is doubt, mark the question as NOT ANSWERABLE.
+
+Return ONLY valid JSON:
+
+{{
+    "is_answerable": true,
+    "reason": "short explanation"
+}}
+"""
+    res = llm.invoke([HumanMessage(content=prompt)])
+    txt = parse_text(res.content).strip()
+    txt = re.sub(r"^```(?:json)?\s*","",txt,flags=re.IGNORECASE)
+    txt = re.sub(r"\s*```$", "", txt)
+
+    usage = extract_usage(res)
+
+    try:
+        obj = json.loads(txt)
+        is_answerable = bool(obj.get("is_answerable", False))
+        answerability_reason = obj.get(
+            "reason",
+            "The question cannot be answered from the database."
+        )
+
+        if not is_answerable:
+            return {
+                "is_answerable": False,
+                "answerability_reason": answerability_reason,
+                "is_valid": False,
+                "error_message": (
+                    "This question cannot be answered using the available "
+                    "database information."
+                ),
+                **add_usage(state, usage)
+            }
+
+        return {
+            "is_answerable": True,
+            "answerability_reason": answerability_reason,
+            "is_valid": False,
+            "error_message": None,
+            **add_usage(state, usage)
+        }
+
+    except Exception:
+        return {
+            "is_answerable": False,
+            "answerability_reason": (
+                "The question could not be verified against the database schema."
+            ),
+            "is_valid": False,
+            "error_message": (
+                "This question cannot be safely answered using the available "
+                "database information."
+            ),
+            **add_usage(state, usage)
+        }
+
+# SQL Generator Node
+def gen_node(state: AgentState) -> Dict[str, Any]:
+    llm = get_llm()
+    prompt = f"""
+You are an expert SQL Data Analyst writing queries for SQLite.
+
+The question has already been checked and determined to be answerable
+using the database schema.
+
+Your job is to write a single clean SQLite SELECT query that answers
+the user's question EXACTLY.
+
+### DATABASE SCHEMA
+
+{state['schema']}
+
+### USER QUESTION
+
+{state['question']}
+
+### STRICT RULES
+
+1. Use ONLY tables and columns explicitly present in the schema.
+2. NEVER invent:
+   - tables
+   - columns
+   - people
+   - relationships
+   - facts
+   - values
+3. The SQL must directly answer the user's question.
+4. Do NOT reinterpret an unrelated question as a database question.
+5. Do NOT use a generic column to answer an unrelated question.
+6. If the question cannot be answered from this database, return exactly:
+NOT_ANSWERABLE
+7. Otherwise return ONE read-only SQLite SELECT query.
+8. Never return INSERT, UPDATE, DELETE, DROP, ALTER, CREATE,
+   TRUNCATE, PRAGMA, ATTACH, or other write/admin statements.
+9. Return ONLY SQL or NOT_ANSWERABLE.
+10. Do not use hardcoded values as a substitute for missing information.
+11. Do NOT invent relationships.
+12. Do NOT answer a different question just because some database
+   information looks vaguely related.
+13. If the question asks for a concept that is not represented in the
+   schema, it must not be mapped to an unrelated column.
 """
     res = llm.invoke([HumanMessage(content=prompt)])
 
     sql = clean_sql(res.content)
     usage = extract_usage(res)
+
+    if sql.strip().upper() == "NOT_ANSWERABLE":
+        return {
+            "sql_query": "",
+            "is_answerable": False,
+            "answerability_reason": "The question could not be mapped to the database schema.",
+            "is_valid": False,
+            "error_message": (
+                "This question cannot be answered using the available "
+                "database information."
+            ),
+            **add_usage(state, usage)
+        }
     
     return {
         "sql_query": sql,
@@ -100,14 +245,46 @@ User Question: {state['question']}
 
 # SQL Validator Node
 def val_node(state: AgentState) -> Dict[str, Any]:
-    sql = state["sql_query"]
-    
-    bad_kw = ["DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "TRUNCATE"]
-    tokens = sql.upper().split()
-    if any(k in tokens for k in bad_kw):
+    sql = state["sql_query"].strip()
+
+    if not sql:
         return {
             "is_valid": False,
-            "error_message": "Security Error: Non-SELECT queries (DROP, DELETE, UPDATE, etc.) are forbidden."
+            "error_message": "Empty SQL query."
+        }
+    normalized = sql.upper().strip()
+    normalized = normalized.rstrip(";").strip()
+
+    if not (
+        normalized.startswith("SELECT")
+        or normalized.startswith("WITH")
+    ):
+        return {
+            "is_valid": False,
+            "error_message": "Security Error: Only read-only SELECT queries are allowed."
+        }
+
+    bad_kw = [
+        "DROP",
+        "DELETE",
+        "UPDATE",
+        "INSERT",
+        "ALTER",
+        "TRUNCATE",
+        "CREATE",
+        "REPLACE",
+        "ATTACH",
+        "DETACH",
+        "PRAGMA",
+        "REINDEX",
+        "VACUUM"
+    ]
+
+    if any(re.search(rf"\b{k}\b", normalized) for k in bad_kw):
+        return {
+            "is_valid": False,
+            "error_message":
+                "Security Error: Non-read-only SQL operation detected."
         }
     
     try:
@@ -129,7 +306,7 @@ def val_node(state: AgentState) -> Dict[str, Any]:
 def repair_node(state: AgentState) -> Dict[str, Any]:
     llm = get_llm()
     tries = state.get("retry_count", 0) + 1
-    hist = state.get("repair_history", [])
+    hist = list(state.get("repair_history", []))
     
     hist.append({
         "attempt": tries,
@@ -174,10 +351,13 @@ def repair_node(state: AgentState) -> Dict[str, Any]:
 def exec_node(state: AgentState) -> Dict[str, Any]:
     try:
         df = run_sql(state["sql_query"])
+        row_count = len(df)
         return {
             "df_result": df.to_dict(orient="records"),
-            "columns": list(df.columns),
-            "row_count": len(df)
+            "columns": list(df.columns) if row_count > 0 else [],
+            "row_count": row_count,
+            "is_valid": True,
+            "error_message": None
         }
     except Exception as e:
         return {

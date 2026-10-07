@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import {
-  Flame,
   Sparkles,
   Database,
   Terminal,
@@ -12,65 +11,75 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { GoogleLogin } from '@react-oauth/google';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 export function Navigation({
   activeTab,
-  setActiveTab,
-  onOpenUpload,
+  activeSection,
+  onNavigate,
   user,
   onGoogleSuccess,
   onGoogleError,
   onSignOut,
   googleClientId,
 }) {
-
+  const navigate = useNavigate();
+  const location = useLocation();
   const [imageError, setImageError] = useState(false);
 
   const landingItems = [
-    { id: 'landing', label: 'Home' },
+    { id: 'home', label: 'Home' },
     { id: 'features', label: 'Features' },
     { id: 'workflow', label: 'How It Works' },
-    { id: 'examples', label: 'Examples' },
+    { id: 'observability', label: 'Observability' },
   ];
 
   const appItems = [
     {
       id: 'agent',
+      path: '/query',
       label: 'AI Query Studio',
       description: 'Ask your database',
       icon: Sparkles,
     },
     {
       id: 'schema',
+      path: '/schema',
       label: 'Database Schema',
       description: 'Tables & columns',
       icon: Database,
     },
     {
       id: 'dashboard',
+      path: '/dashboard',
       label: 'Overview',
       description: 'Usage & costs',
       icon: LayoutDashboard,
     },
-
     {
       id: 'console',
+      path: '/sql-console',
       label: 'SQL Console',
       description: 'Run SQL directly',
       icon: Terminal,
+    },
+    {
+      id: 'dataset',
+      path: '/dataset',
+      label: 'Import Data',
+      description: 'CSV, Excel & JSON',
+      icon: UploadCloud,
     },
   ];
 
   if (user) {
     return (
       <aside className="fixed left-0 top-0 bottom-0 z-50 w-[250px] border-r flex flex-col glass-panel border-b border-slate-800/80 backdrop-blur-md ">
-
         <div className="h-[72px] px-5 flex items-center border-b border-white/[0.06]">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-[#15191f] border border-white/[0.08] flex items-center justify-center">
-              <Flame className="w-[18px] h-[18px] text-blue-400" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-[#08090b] shadow-sm">
+              <Database className="h-[17px] w-[17px]" />
             </div>
-
             <div className="text-left leading-none">
               <div className="text-md font-semibold text-white">
                 Text2SQL
@@ -82,22 +91,19 @@ export function Navigation({
             </div>
           </div>
         </div>
-
         <div className="px-5 py-3">
           <span className="text-[10px] font-semibold tracking-[0.12em] uppercase text-slate-500">
             Workspace
           </span>
         </div>
-
         <nav className="px-3 space-y-1">
           {appItems.map((item) => {
             const Icon = item.icon;
-            const isActive = activeTab === item.id;
-
+            const isActive = location.pathname === item.path;
             return (
               <button
                 key={item.id}
-                onClick={() => setActiveTab(item.id)}
+                onClick={() => navigate(item.path)}
                 className={`relative w-full flex items-center gap-3 px-3 py-3 rounded-xl
                   text-left transition-all duration-150 group cursor-pointer
                   ${isActive
@@ -125,12 +131,10 @@ export function Navigation({
                 >
                   <Icon className="w-[17px] h-[17px]" />
                 </div>
-
                 <div className="flex-1 min-w-0">
                   <div className="text-[13px] font-medium">
                     {item.label}
                   </div>
-
                   <div
                     className={`
                       text-[10px] mt-0.5
@@ -143,7 +147,6 @@ export function Navigation({
                     {item.description}
                   </div>
                 </div>
-
                 {isActive && (
                   <ChevronRight className="w-3.5 h-3.5 text-slate-600" />
                 )}
@@ -152,69 +155,7 @@ export function Navigation({
           })}
         </nav>
 
-        <div className="px-5 py-3">
-          <span className="text-[10px] font-semibold tracking-[0.12em] uppercase text-slate-500">
-            Data
-          </span>
-        </div>
-
-        <div className="px-3">
-          <button
-            onClick={() => {
-              setActiveTab('import-data');
-              onOpenUpload();
-            }}
-            className={`
-    relative w-full flex items-center gap-3 px-3 py-3 rounded-xl
-    text-left transition-all duration-150 group cursor-pointer
-    ${activeTab === 'import-data'
-                ? 'bg-white/[0.065] text-white'
-                : 'text-slate-400 hover:bg-white/[0.035] hover:text-slate-200'
-              }
-  `}
-          >
-            {activeTab === 'import-data' && (
-              <div className="
-      absolute left-0
-      w-[2px] h-5
-      rounded-full
-      bg-blue-400
-    " />
-            )}
-            <div className={`
-      w-8 h-8 rounded-md flex items-center justify-center
-      ${activeTab === 'import-data'
-                ? 'bg-blue-500/10 text-blue-400'
-                : 'bg-transparent text-slate-500 group-hover:text-slate-300'
-              }
-    `}>
-              <UploadCloud className="w-[17px] h-[17px]" />
-            </div>
-
-            <div className="text-left">
-              <div className="text-[13px] font-medium">
-                Import Data
-              </div>
-              <div
-                className={`
-        text-[10px] mt-0.5
-        ${activeTab === 'import-data'
-                    ? 'text-slate-400'
-                    : 'text-slate-600'
-                  }
-      `}
-              >
-                CSV, Excel & JSON
-              </div>
-            </div>
-            {activeTab === 'import-data' && (
-              <ChevronRight className="w-3.5 h-3.5 text-slate-600 ml-auto" />
-            )}
-          </button>
-        </div>
-
         <div className="mt-auto px-3 pb-3 pt-6">
-
           <div className="
           flex items-center gap-3
           px-3 py-3
@@ -222,7 +163,6 @@ export function Navigation({
           bg-white/[0.025]
           border border-white/[0.05]"
           >
-
             {user.picture && !imageError ? (
               <img
                 src={user.picture}
@@ -235,7 +175,6 @@ export function Navigation({
                 <User className="w-4 h-4 text-slate-400" />
               </div>
             )}
-
             <div className="flex-1 min-w-0">
               <div className="
               text-[12px]
@@ -245,7 +184,6 @@ export function Navigation({
             ">
                 {user.name}
               </div>
-
               <div className="
               text-[10px]
               text-slate-400
@@ -253,7 +191,6 @@ export function Navigation({
                 Signed in
               </div>
             </div>
-
             <button
               onClick={onSignOut}
               title="Sign Out"
@@ -270,57 +207,37 @@ export function Navigation({
             >
               <LogOut className="w-4 h-4" />
             </button>
-
           </div>
         </div>
       </aside>
     );
   }
 
-
   return (
     <header className="sticky top-0 z-50 glass-panel border-b border-slate-800/80 backdrop-blur-md">
-
       <div className="max-w-7xl mx-auto px-5 sm:px-8">
-
         <div className="h-[72px] flex items-center justify-between">
-
           <button
-            onClick={() => setActiveTab('landing')}
+            onClick={() => onNavigate('home')}
             className="flex items-center gap-3 group cursor-pointer"
           >
-            <div className="
-              w-9 h-9
-              rounded-lg
-              bg-[#15191f]
-              border border-white/[0.08]
-              flex items-center justify-center
-              group-hover:border-white/[0.15]
-              transition
-            ">
-              <Flame className="w-[18px] h-[18px] text-blue-400" />
-            </div>
-
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-[#08090b] shadow-sm"> <Database className="h-[17px] w-[17px]" /> </div>
             <div className="text-left">
               <div className="text-md font-semibold text-white">
                 Text2SQL
               </div>
-
               <div className="hidden sm:block text-[12px] text-slate-400">
                 Query. Analyze. Understand.
               </div>
             </div>
           </button>
-
           <nav className="hidden md:flex items-center gap-1 ">
-
             {landingItems.map((item) => {
-              const isActive = activeTab === item.id;
-
+              const isActive = activeTab === 'landing' && activeSection === item.id;
               return (
                 <button
                   key={item.id}
-                  onClick={() => setActiveTab(item.id)}
+                  onClick={() => onNavigate(item.id)}
                   className={`relative
                     px-4 py-2 rounded-md
                     text-[13px] font-medium
@@ -338,13 +255,10 @@ export function Navigation({
                 </button>
               );
             })}
-
           </nav>
-
           <div className="flex items-center gap-2">
-
             <button
-              onClick={() => setActiveTab('guest')}
+              onClick={() => navigate('/guest')}
               className="
                 hidden sm:flex
                 items-center gap-2
@@ -362,7 +276,6 @@ export function Navigation({
               <Zap className="w-3.5 h-3.5" />
               Try Now
             </button>
-
             {googleClientId && (
               <GoogleLogin
                 onSuccess={onGoogleSuccess}
@@ -373,9 +286,7 @@ export function Navigation({
                 size="large"
               />
             )}
-
           </div>
-
         </div>
       </div>
     </header>

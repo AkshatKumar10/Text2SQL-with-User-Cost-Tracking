@@ -1,104 +1,184 @@
-import React from 'react';
-import { Bot, CheckCircle2, AlertTriangle, ShieldCheck, Database, Sparkles, BarChart2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Check, Wrench, X, Minus, ChevronDown, Code2, RotateCcw } from 'lucide-react';
 
-export function AgentWorkflowTracker({ latency, retryCount, repairHistory, isValid, error }) {
-  const steps = [
-    {
-      id: 1,
-      name: "Schema Understanding",
-      desc: "SQLite metadata & relations inspection",
-      status: "complete",
-      icon: Database,
-      color: "text-blue-400",
-      bg: "bg-blue-500/10 border-blue-500/30"
-    },
-    {
-      id: 2,
-      name: "SQL Generation",
-      desc: "LLM synthesis & constraint alignment",
-      status: "complete",
-      icon: Sparkles,
-      color: "text-purple-400",
-      bg: "bg-purple-500/10 border-purple-500/30"
-    },
-    {
-      id: 3,
-      name: "Self-Healing Validator",
-      desc: retryCount > 0 ? `Auto-repaired in ${retryCount} attempt(s)` : "Clean syntax & execution on attempt 1",
-      status: isValid ? (retryCount > 0 ? "warning" : "complete") : "error",
-      icon: ShieldCheck,
-      color: retryCount > 0 ? "text-amber-400" : "text-emerald-400",
-      bg: retryCount > 0 ? "bg-amber-500/10 border-amber-500/30" : "bg-emerald-500/10 border-emerald-500/30"
-    },
-    {
-      id: 4,
-      name: "Data Analyst & Viz",
-      desc: "BI insights & chart recommendation",
-      status: isValid ? "complete" : "skipped",
-      icon: BarChart2,
-      color: "text-cyan-400",
-      bg: "bg-cyan-500/10 border-cyan-500/30"
-    }
-  ];
+const tones = {
+  done: {
+    icon: Check,
+    text: 'Done',
+    circle: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-400',
+    label: 'text-slate-500',
+  },
+  fixed: {
+    icon: Wrench,
+    text: 'Fixed automatically',
+    circle: 'border-amber-400/30 bg-amber-400/10 text-amber-400',
+    label: 'text-amber-400/80',
+  },
+  failed: {
+    icon: X,
+    text: 'Failed',
+    circle: 'border-red-400/30 bg-red-400/10 text-red-400',
+    label: 'text-red-400/80',
+  },
+  skipped: {
+    icon: Minus,
+    text: 'Skipped',
+    circle: 'border-white/[0.08] bg-white/[0.02] text-slate-600',
+    label: 'text-slate-600',
+  },
+};
+
+export function AgentWorkflowTracker({
+  retryCount = 0,
+  repairHistory,
+  isValid,
+  error,
+  isAnswerable = true, 
+  answerabilityReason,
+}) {
+  const [expanded, setExpanded] = useState({});
+  const toggle = (idx) => setExpanded((prev) => ({ ...prev, [idx]: !prev[idx] }));
+
+  const answerable = isAnswerable !== false;
+  const checkStatus = !isValid ? 'failed' : retryCount > 0 ? 'fixed' : 'done';
+
+  const steps = answerable
+    ? [
+        { name: 'Check question', status: 'done' },
+        { name: 'Write SQL', status: 'done' },
+        { name: 'Check SQL', status: checkStatus },
+        { name: 'Show results', status: isValid ? 'done' : 'skipped' },
+      ]
+    : [
+        { name: 'Check question', status: 'failed', text: "Can't answer" },
+        { name: 'Write SQL', status: 'skipped' },
+        { name: 'Check SQL', status: 'skipped' },
+        { name: 'Show results', status: 'skipped' },
+      ];
+
+  const message = !answerable ? answerabilityReason || error : error;
+  const hasTrace = retryCount > 0 && repairHistory && repairHistory.length > 0;
 
   return (
-    <div className="glass-panel p-5 rounded-2xl border border-slate-800 shadow-xl space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Bot className="w-5 h-5 text-indigo-400" />
-          <h3 className="font-semibold text-sm text-slate-200">LangGraph Agent Execution Chain</h3>
-        </div>
-        <div className="flex items-center gap-3 text-xs">
-          <span className="px-2.5 py-1 bg-slate-800/80 rounded-full font-mono text-cyan-300 border border-slate-700/60">
-            ⚡ {latency}s latency
-          </span>
-          <span className={`px-2.5 py-1 rounded-full font-mono text-xs border ${
-            retryCount === 0
-              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-              : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-          }`}>
-            {retryCount === 0 ? '✓ 0 retries' : `⚠️ ${retryCount} self-repair(s)`}
-          </span>
-        </div>
+    <div className="overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0d0f13]">
+      <div className="p-4 sm:p-5">
+        <ol className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          {steps.map((s) => {
+            const tone = tones[s.status];
+            const Icon = tone.icon;
+            return (
+              <li key={s.name} className="flex items-center gap-3">
+                <span
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${tone.circle}`}
+                >
+                  <Icon className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-100">{s.name}</p>
+                  <p className={`text-xs ${tone.label}`}>{s.text ?? tone.text}</p>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+
+        {!isValid && message && (
+          <p
+            role="alert"
+            className="mt-4 break-words rounded-lg border border-red-400/20 bg-red-400/[0.06] px-3 py-2.5 text-xs leading-5 text-red-300"
+          >
+            {message}
+          </p>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-        {steps.map((st, i) => {
-          const Icon = st.icon;
-          return (
-            <div
-              key={st.id}
-              className={`p-3.5 rounded-xl border flex flex-col justify-between transition-all ${st.bg}`}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <div className={`p-2 rounded-lg bg-slate-900/60 ${st.color}`}>
-                  <Icon className="w-4 h-4" />
-                </div>
-                {st.status === 'complete' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                {st.status === 'warning' && <AlertTriangle className="w-4 h-4 text-amber-400" />}
+      {hasTrace && (
+        <div className="border-t border-amber-500/10 bg-amber-950/10 px-5 py-4">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/10">
+                <RotateCcw className="h-3.5 w-3.5 text-amber-400" />
               </div>
               <div>
-                <p className="text-xs font-semibold text-slate-100">{st.name}</p>
-                <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">{st.desc}</p>
+                <p className="text-sm font-semibold text-amber-300">Self-Repair Trace</p>
+                <p className="text-xs text-slate-500">
+                  {isValid
+                    ? 'The agent detected and corrected an SQL issue automatically'
+                    : 'The agent tried to correct the SQL but could not'}
+                </p>
               </div>
             </div>
-          );
-        })}
-      </div>
 
-      {retryCount > 0 && repairHistory && repairHistory.length > 0 && (
-        <div className="mt-3 p-3.5 bg-amber-950/20 border border-amber-500/30 rounded-xl space-y-2">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-400">
-            <AlertTriangle className="w-3.5 h-3.5" />
-            <span>Agent Self-Repair Trace:</span>
+            <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-1 font-mono text-[10px] text-amber-400">
+              {repairHistory.length} attempt{repairHistory.length > 1 ? 's' : ''}
+            </span>
           </div>
-          <div className="space-y-2 text-xs font-mono">
-            {repairHistory.map((rep, idx) => (
-              <div key={idx} className="p-2.5 bg-slate-950/80 rounded-lg border border-amber-900/40 text-slate-300">
-                <span className="text-amber-400 font-bold block mb-1">Attempt #{rep.attempt} Error: {rep.error}</span>
-                <span className="text-slate-400 block text-[11px] whitespace-pre-wrap">Query: {rep.failed_sql}</span>
-              </div>
-            ))}
+
+          <div className="space-y-2">
+            {repairHistory.map((rep, idx) => {
+              const isExpanded = !!expanded[idx];
+              const panelId = `failed-sql-${idx}`;
+
+              return (
+                <div
+                  key={idx}
+                  className="rounded-xl border border-amber-500/10 bg-slate-950/60 p-3 transition-all duration-200 hover:border-amber-500/20"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-md bg-amber-500/10 text-[10px] font-bold text-amber-400">
+                        {rep.attempt}
+                      </span>
+                      <span className="text-xs font-semibold text-amber-300">Attempt #{rep.attempt}</span>
+                      <span className="h-1 w-1 rounded-full bg-slate-700" />
+                      <span className="text-[11px] uppercase tracking-wide text-slate-400">Error detected</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => toggle(idx)}
+                      aria-expanded={isExpanded}
+                      aria-controls={panelId}
+                      className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-900/70 px-2 py-1 text-[11px] font-medium text-slate-400 transition-all hover:border-slate-700 hover:bg-slate-800 hover:text-slate-200"
+                    >
+                      <Code2 className="h-3 w-3" />
+                      <span className="hidden sm:inline">{isExpanded ? 'Hide SQL' : 'View SQL'}</span>
+                      <ChevronDown
+                        className={`h-3 w-3 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+                      />
+                    </button>
+                  </div>
+
+                  <div className="mt-2 rounded-lg border border-red-500/10 bg-red-500/5 px-3 py-2">
+                    <p className="break-words text-[11px] leading-relaxed text-red-300/80">{rep.error}</p>
+                  </div>
+
+                  <div
+                    id={panelId}
+                    aria-hidden={!isExpanded}
+                    className={`grid transition-all duration-300 ${
+                      isExpanded ? 'mt-2 grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+                    }`}
+                  >
+                    <div className="overflow-hidden">
+                      <div className="rounded-lg border border-slate-800 bg-slate-950">
+                        <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
+                          <div className="flex items-center gap-1.5">
+                            <Code2 className="h-3 w-3 text-slate-600" />
+                            <span className="text-[11px] uppercase tracking-wider text-slate-600">Failed SQL</span>
+                          </div>
+                        </div>
+                        <div className="max-h-64 overflow-auto px-3 py-3">
+                          <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-slate-400">
+                            {rep.failed_sql}
+                          </pre>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

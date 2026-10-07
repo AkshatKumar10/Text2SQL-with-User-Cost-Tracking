@@ -1,10 +1,15 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Table as TableIcon, Download, Search } from 'lucide-react';
 
 export function DataTable({ data, columns }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [page, setPage] = useState(0);
-  const rowsPerPage = 7;
+
+  const rowsPerPage = 5;
+
+  useEffect(() => {
+    setPage(0);
+  }, [data]);
 
   if (!data || data.length === 0) {
     return (
@@ -14,50 +19,63 @@ export function DataTable({ data, columns }) {
     );
   }
 
-  const cols = columns && columns.length > 0 ? columns : Object.keys(data[0] || {});
+  const cols =
+    columns && columns.length > 0
+      ? columns
+      : Object.keys(data[0] || {});
 
-  // Filter based on search term
+  const normalizedSearch = searchTerm.toLowerCase();
   const filteredData = data.filter((row) =>
     cols.some((col) =>
       String(row[col] ?? '')
         .toLowerCase()
-        .includes(searchTerm.toLowerCase())
+        .includes(normalizedSearch)
     )
   );
 
-  const paginatedData = filteredData.slice(page * rowsPerPage, (page + 1) * rowsPerPage);
   const totalPages = Math.ceil(filteredData.length / rowsPerPage);
+  const safePage = Math.min(
+    page,
+    Math.max(0, totalPages - 1)
+  );
+
+  const paginatedData = filteredData.slice(
+    safePage * rowsPerPage,
+    (safePage + 1) * rowsPerPage
+  );
 
   const exportCSV = () => {
-    if (!filteredData || filteredData.length === 0) return;
+    if (filteredData.length === 0) return;
+    const header = cols
+      .map((col) => `"${String(col).replace(/"/g, '""')}"`)
+      .join(',');
 
-    // Header row with proper escaping
-    const header = cols.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',');
-    
-    // Data rows with proper string & null escaping
-    const rows = filteredData.map(row =>
-      cols.map(c => {
-        let val = row[c];
-        if (val === null || val === undefined) {
-          val = '';
-        } else if (typeof val === 'object') {
-          val = JSON.stringify(val);
-        } else {
-          val = String(val);
-        }
-        return `"${val.replace(/"/g, '""')}"`;
-      }).join(',')
+    const rows = filteredData.map((row) =>
+      cols
+        .map((col) => {
+          let value = row[col];
+          if (value === null || value === undefined) {
+            value = '';
+          } else if (typeof value === 'object') {
+            value = JSON.stringify(value);
+          } else {
+            value = String(value);
+          }
+          return `"${value.replace(/"/g, '""')}"`;
+        })
+        .join(',')
     );
 
     const csvContent = [header, ...rows].join('\r\n');
+    const blob = new Blob(
+      ['\uFEFF' + csvContent],
+      { type: 'text/csv;charset=utf-8;' }
+    );
 
-    // Add UTF-8 BOM (\uFEFF) so Excel opens dates, text & timestamps cleanly without #####
-    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `query_results_${Date.now()}.csv`);
+    link.download = `query_results_${Date.now()}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -66,15 +84,19 @@ export function DataTable({ data, columns }) {
 
   return (
     <div className="glass-panel rounded-2xl border border-slate-800 overflow-hidden shadow-2xl">
-      {/* Table Toolbar */}
       <div className="p-4 bg-slate-900/60 border-b border-slate-800 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-2">
           <div className="p-2 bg-indigo-500/10 text-indigo-400 rounded-lg">
             <TableIcon className="w-4 h-4" />
           </div>
           <div>
-            <h4 className="text-sm font-semibold text-slate-200">Execution Result Table</h4>
-            <p className="text-xs text-slate-400">{filteredData.length} records matching</p>
+            <h4 className="text-sm font-semibold text-slate-200">
+              Result Table
+            </h4>
+
+            <p className="text-xs text-slate-400">
+              {filteredData.length} records matching
+            </p>
           </div>
         </div>
 
@@ -95,7 +117,8 @@ export function DataTable({ data, columns }) {
 
           <button
             onClick={exportCSV}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white rounded-lg text-xs font-medium border border-slate-700 transition"
+            disabled={filteredData.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-300 hover:text-white rounded-lg text-xs font-medium border border-slate-700 transition"
           >
             <Download className="w-3.5 h-3.5" />
             <span>CSV</span>
@@ -103,60 +126,95 @@ export function DataTable({ data, columns }) {
         </div>
       </div>
 
-      {/* Table Container */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-xs border-collapse">
-          <thead>
-            <tr className="bg-slate-950/80 border-b border-slate-800 text-slate-400 font-mono uppercase tracking-wider">
-              {cols.map((col, idx) => (
-                <th key={idx} className="py-3 px-4 font-semibold text-slate-300">
-                  {col}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800/60">
-            {paginatedData.map((row, rIdx) => (
-              <tr
-                key={rIdx}
-                className="hover:bg-indigo-950/20 transition-colors duration-150 odd:bg-slate-900/20 even:bg-slate-900/40"
-              >
-                {cols.map((col, cIdx) => (
-                  <td key={cIdx} className="py-3 px-4 text-slate-300 whitespace-nowrap">
-                    {row[col] !== null && row[col] !== undefined ? String(row[col]) : (
-                      <span className="text-slate-600 italic">null</span>
-                    )}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Pagination Footer */}
-      {totalPages > 1 && (
-        <div className="px-4 py-2.5 bg-slate-950/60 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
-          <div>
-            Page {page + 1} of {totalPages}
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={page === 0}
-              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed rounded text-slate-300"
-            >
-              Prev
-            </button>
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-              disabled={page >= totalPages - 1}
-              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed rounded text-slate-300"
-            >
-              Next
-            </button>
-          </div>
+      {filteredData.length === 0 ? (
+        <div className="p-10 text-center">
+          <Search className="w-5 h-5 mx-auto mb-2 text-slate-600" />
+          <p className="text-sm text-slate-400">
+            No matching records
+          </p>
+          <p className="text-xs text-slate-600 mt-1">
+            Try a different search term.
+          </p>
         </div>
+      ) : (
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+
+              <thead>
+                <tr className="bg-slate-950/80 border-b border-slate-800 text-slate-400 font-mono uppercase tracking-wider">
+                  {cols.map((col, idx) => (
+                    <th
+                      key={idx}
+                      className="py-3 px-4 font-semibold text-slate-300"
+                    >
+                      {col}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-800/60">
+                {paginatedData.map((row, rowIndex) => (
+                  <tr
+                    key={rowIndex}
+                    className="hover:bg-indigo-950/20 transition-colors duration-150 odd:bg-slate-900/20 even:bg-slate-900/40"
+                  >
+                    {cols.map((col, colIndex) => (
+                      <td
+                        key={colIndex}
+                        className="py-3 px-4 text-slate-300 whitespace-nowrap"
+                      >
+                        {row[col] !== null &&
+                        row[col] !== undefined ? (
+                          typeof row[col] === 'object' ? (
+                            JSON.stringify(row[col])
+                          ) : (
+                            String(row[col])
+                          )
+                        ) : (
+                          <span className="text-slate-600 italic">
+                            null
+                          </span>
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {totalPages > 1 && (
+            <div className="px-4 py-2.5 bg-slate-950/60 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+              <div>
+                Page {safePage + 1} of {totalPages}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() =>
+                    setPage((p) => Math.max(0, p - 1))
+                  }
+                  disabled={safePage === 0}
+                  className="cursor-pointer px-2.5 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed rounded text-slate-300 transition"
+                >
+                  Prev
+                </button>
+                <button
+                  onClick={() =>
+                    setPage((p) =>
+                      Math.min(totalPages - 1, p + 1)
+                    )
+                  }
+                  disabled={safePage >= totalPages - 1}
+                  className="cursor-pointer px-2.5 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed rounded text-slate-300 transition"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
