@@ -12,7 +12,6 @@ class AgentState(TypedDict):
     error_message: Optional[str]
     retry_count: int
     max_retries: int
-    repair_history: List[Dict[str, Any]]
     df_result: Optional[List[Dict[str, Any]]]
     columns: Optional[List[str]]
     row_count: int

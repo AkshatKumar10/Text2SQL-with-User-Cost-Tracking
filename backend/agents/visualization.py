@@ -1,40 +1,71 @@
 import re
-import datetime
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, Tuple, List, Optional
 
 SUPPORTED_CHART_TYPES = {"bar", "line", "pie", "scatter", "kpi", "table", "none"}
 
+# Matches 2024-05-17 and also month buckets like 2024-05
+DATE_RE = re.compile(r"^\d{4}[-/]\d{2}([-/]\d{2})?")
+
+MAX_BARS = 50              # more rows than this is unreadable as bars
+MAX_PIE_CATEGORIES = 12    # more categories than this is unreadable as a pie
+
+
+# ---------------------------------------------------------------------
+# Column helpers
+# ---------------------------------------------------------------------
 def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalizes numeric-looking strings and dates in pandas DataFrame."""
+    """Turns numeric-looking text columns into numbers (used for profiling and validation only)."""
     if df is None or df.empty:
         return pd.DataFrame()
 
-    df_clean = df.copy()
-    for col in df_clean.columns:
-        non_nulls = df_clean[col].dropna()
-        if len(non_nulls) == 0:
+    out = df.copy()
+    for col in out.columns:
+        s = out[col]
+        if (
+            pd.api.types.is_numeric_dtype(s)
+            or pd.api.types.is_bool_dtype(s)
+            or pd.api.types.is_datetime64_any_dtype(s)
+        ):
             continue
 
-        if df_clean[col].dtype == object or isinstance(df_clean[col].dtype, pd.CategoricalDtype):
-            numeric_parsed = pd.to_numeric(df_clean[col], errors='coerce')
-            if numeric_parsed.notna().sum() / max(len(non_nulls), 1) > 0.8:
-                df_clean[col] = numeric_parsed
+        non_null = s.dropna()
+        if non_null.empty:
+            continue
 
-    return df_clean
+        # Codes such as "00123" must stay text
+        if non_null.astype(str).str.match(r"^0\d+$").any():
+            continue
 
-def profile_dataframe(df: pd.DataFrame) -> Dict[str, Any]:
-    """
-    Programmatically calculates compact, rich dataset statistics for LLM prompt context.
-    """
+        parsed = pd.to_numeric(s, errors="coerce")
+        if parsed.notna().sum() / len(non_null) > 0.8:
+            out[col] = parsed
+
+    return out
+
+
+def _column_kind(series: pd.Series) -> str:
+    """boolean | numeric | datetime | text"""
+    if pd.api.types.is_bool_dtype(series):
+        return "boolean"
+    if pd.api.types.is_numeric_dtype(series):
+        return "numeric"
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return "datetime"
+
+    non_null = series.dropna()
+    if len(non_null) > 0:
+        sample = non_null.astype(str).head(10)
+        if sample.map(lambda s: bool(DATE_RE.match(s))).mean() > 0.7:
+            return "datetime"
+    return "text"
+
+
+def profile_dataframe(df: pd.DataFrame, sample_size: int = 5) -> Dict[str, Any]:
+    """Compact dataset statistics for the LLM prompt."""
     if df is None or df.empty:
-        return {
-            "row_count": 0,
-            "columns": [],
-            "profiles": {},
-            "sample": []
-        }
+        return {"row_count": 0, "columns": [], "profiles": {}, "sample": []}
 
     df_clean = normalize_dataframe(df)
     row_count = len(df_clean)
@@ -43,84 +74,101 @@ def profile_dataframe(df: pd.DataFrame) -> Dict[str, Any]:
     for col in df_clean.columns:
         series = df_clean[col]
         non_null = series.dropna()
-        null_count = int(series.isna().sum())
         unique_count = int(series.nunique(dropna=True))
 
-        inferred_type = "text"
-        if pd.api.types.is_numeric_dtype(series):
-            inferred_type = "numeric"
-        elif pd.api.types.is_datetime64_any_dtype(series):
-            inferred_type = "datetime"
-        elif pd.api.types.is_bool_dtype(series):
-            inferred_type = "boolean"
-        else:
-            sample_str = non_null.astype(str).head(10)
-            date_matches = sample_str.apply(lambda s: bool(re.match(r'^\d{4}[-/]\d{2}[-/]\d{2}', s)))
-            if date_matches.mean() > 0.7:
-                inferred_type = "datetime"
-            elif unique_count <= max(10, int(row_count * 0.3)):
-                inferred_type = "categorical"
+        kind = _column_kind(series)
+        if kind == "text" and unique_count <= max(10, int(row_count * 0.3)):
+            kind = "categorical"
 
         min_val = None
         max_val = None
-        if inferred_type == "numeric" and len(non_null) > 0:
-            min_val = float(non_null.min()) if not np.isnan(non_null.min()) else None
-            max_val = float(non_null.max()) if not np.isnan(non_null.max()) else None
-        elif inferred_type == "datetime" and len(non_null) > 0:
+        if kind == "numeric" and len(non_null) > 0:
+            min_val = float(non_null.min())
+            max_val = float(non_null.max())
+        elif kind == "datetime" and len(non_null) > 0:
             min_val = str(non_null.min())
             max_val = str(non_null.max())
 
         profiles[str(col)] = {
-            "type": inferred_type,
+            "type": kind,
             "unique_count": unique_count,
-            "null_count": null_count,
+            "null_count": int(series.isna().sum()),
             "min": min_val,
             "max": max_val,
         }
 
-    sample_records = df_clean.head(5).astype(object).where(pd.notna(df_clean.head(5)), None).to_dict(orient="records")
+    head = df_clean.head(sample_size)
+    sample_records = head.astype(object).where(pd.notna(head), None).to_dict(orient="records")
 
     return {
         "row_count": row_count,
         "columns": [str(c) for c in df_clean.columns],
         "profiles": profiles,
-        "sample": sample_records
+        "sample": sample_records,
     }
 
+
+# ---------------------------------------------------------------------
+# KPI formatting (whole-word matching: "total_items" is a count, not milliseconds)
+# ---------------------------------------------------------------------
+def _tokens(name: str) -> set:
+    spaced = re.sub(r"([a-z])([A-Z])", r"\1_\2", str(name))
+    return {t for t in re.split(r"[^a-z0-9]+", spaced.lower()) if t}
+
+
+def kpi_format(col: str, value, config: Dict[str, Any]) -> Tuple[str, Optional[str]]:
+    t = _tokens(col)
+    unit = config.get("unit")
+
+    if t & {"count", "qty", "quantity", "num", "number", "items", "orders", "customers", "products", "units"}:
+        return "integer", unit  # counts are never money
+    if t & {"percent", "percentage", "pct", "rate", "share", "ratio"}:
+        return "percentage", unit
+    if t & {"price", "cost", "revenue", "amount", "sales", "salary", "spend", "spent", "profit", "income"}:
+        return "currency", unit
+    for token, u in (("ms", "ms"), ("sec", "s"), ("seconds", "s"), ("minutes", "min"), ("kg", "kg"), ("km", "km")):
+        if token in t:
+            return "unit", u
+    if isinstance(value, (int, np.integer)):
+        return "integer", unit
+    if isinstance(value, (float, np.floating)):
+        return "decimal", unit
+    return "plain", unit
+
+
+# ---------------------------------------------------------------------
+# Validation layer between the LLM's suggestion and the frontend renderer.
+#
+# bar "layout":  "vertical"   = columns (categories along the bottom)
+#                "horizontal" = bars running left to right (categories down the side)
+# ---------------------------------------------------------------------
 def validate_and_normalize_chart_config(
     df: pd.DataFrame,
     llm_rec_type: str,
     llm_config: Dict[str, Any],
-    question: str = ""
+    question: str = "",
 ) -> Tuple[str, Dict[str, Any]]:
-    """
-    Deterministic Visualization Validation/Normalization Layer (Requirement #98-102).
-    Enforces semantic & structural rules between query result data and frontend renderer.
-    """
-    if df is None or df.empty or len(df) == 0:
+
+    if df is None or df.empty:
         return "none", {"title": "No Results Found", "reason": "Query returned 0 rows."}
 
     df_clean = normalize_dataframe(df)
     cols = [str(c) for c in df_clean.columns]
+    df_clean.columns = cols
     row_count = len(df_clean)
 
-    numeric_cols = []
-    datetime_cols = []
-    categorical_cols = []
+    numeric_cols: List[str] = []
+    datetime_cols: List[str] = []
+    dimension_cols: List[str] = []  # text, categorical and boolean columns
 
-    for col in cols:
-        series = df_clean[col].dropna()
-        if pd.api.types.is_numeric_dtype(df_clean[col]):
-            numeric_cols.append(col)
-        elif pd.api.types.is_datetime64_any_dtype(df_clean[col]):
-            datetime_cols.append(col)
+    for c in cols:
+        kind = _column_kind(df_clean[c])
+        if kind == "numeric":
+            numeric_cols.append(c)
+        elif kind == "datetime":
+            datetime_cols.append(c)
         else:
-            sample_str = series.astype(str).head(10)
-            date_matches = sample_str.apply(lambda s: bool(re.match(r'^\d{4}[-/]\d{2}[-/]\d{2}', s)))
-            if date_matches.mean() > 0.7:
-                datetime_cols.append(col)
-            else:
-                categorical_cols.append(col)
+            dimension_cols.append(c)
 
     rec_type = str(llm_rec_type or "table").strip().lower()
     if rec_type not in SUPPORTED_CHART_TYPES:
@@ -129,137 +177,129 @@ def validate_and_normalize_chart_config(
     config = dict(llm_config or {})
     title = config.get("title") or question or "Query Results"
 
+    # Remember why we had to change the chart, so the UI can say so.
+    why: List[Optional[str]] = [None]
+
+    def downgrade(reason: str):
+        if why[0] is None:
+            why[0] = reason
+
+    # ---- Repair column references --------------------------------
     x_col = config.get("x")
     y_col = config.get("y")
     kpi_col = config.get("kpi_value_column")
+    color_col = config.get("color") if config.get("color") in cols else None
     series_cols = config.get("series") if isinstance(config.get("series"), list) else []
-    color_col = config.get("color")
 
     if x_col not in cols:
-        x_col = (categorical_cols + datetime_cols + cols)[0] if cols else None
+        x_col = next(iter(dimension_cols + datetime_cols + cols), None)
 
-    if y_col not in cols:
-        y_col = (numeric_cols + cols)[0] if cols else None
+    if y_col not in numeric_cols:
+        y_col = next((c for c in numeric_cols if c != x_col), None)
 
-    if kpi_col not in cols:
-        kpi_col = (numeric_cols + cols)[0] if cols else None
+    if x_col == y_col:
+        x_col = next((c for c in dimension_cols + datetime_cols + cols if c != y_col), None)
 
-    if color_col not in cols:
-        color_col = None
+    valid_series = [c for c in series_cols if c in numeric_cols and c != x_col]
+    series = valid_series if len(valid_series) > 1 else ([y_col] if y_col else [])
 
-    valid_series = [c for c in series_cols if c in cols and c in numeric_cols]
+    has_dimension = bool(dimension_cols or datetime_cols)
+
+    # ---- 1. KPI --------------------------------------------------
     if rec_type == "kpi":
-        if kpi_col and kpi_col in numeric_cols:
-            kpi_val = df_clean[kpi_col].dropna().iloc[0] if len(df_clean[kpi_col].dropna()) > 0 else None
-            format_type = "plain"
-            unit = config.get("unit")
-            col_lower = kpi_col.lower()
-
-            if "percent" in col_lower or "rate" in col_lower or "%" in col_lower or "share" in col_lower:
-                format_type = "percentage"
-            elif any(k in col_lower for k in ["price", "cost", "revenue", "amount", "sales", "total_amount", "unit_price", "salary"]):
-                format_type = "currency"
-            elif isinstance(kpi_val, (int, np.integer)):
-                format_type = "integer"
-            elif isinstance(kpi_val, (float, np.floating)):
-                format_type = "decimal"
-
-            if any(u in col_lower for u in ["ms", "duration", "time", "seconds", "min", "kg", "km"]):
-                if "ms" in col_lower: unit = "ms"
-                elif "sec" in col_lower: unit = "s"
-                elif "min" in col_lower: unit = "m"
-                elif "kg" in col_lower: unit = "kg"
-                elif "km" in col_lower: unit = "km"
-                format_type = "unit"
-
+        if row_count == 1 and numeric_cols:
+            col = kpi_col if kpi_col in numeric_cols else numeric_cols[0]
+            val = df_clean[col].dropna().iloc[0] if df_clean[col].notna().any() else None
+            fmt, unit = kpi_format(col, val, config)
             return "kpi", {
                 "title": title,
-                "kpi_value_column": kpi_col,
-                "format": format_type,
+                "kpi_value_column": col,
+                "format": fmt,
                 "unit": unit,
                 "currency": config.get("currency", "USD"),
             }
-        elif row_count == 1 and len(numeric_cols) > 0:
-            kpi_col = numeric_cols[0]
-            return "kpi", {
-                "title": title,
-                "kpi_value_column": kpi_col,
-                "format": "currency" if any(k in kpi_col.lower() for k in ["amount", "price", "cost", "revenue"]) else "decimal",
-            }
-        else:
-            rec_type = "table"
+        downgrade("A single-value card needs exactly one row.")
+        rec_type = "bar" if (numeric_cols and has_dimension) else "table"
 
+    # ---- 2. Scatter ----------------------------------------------
     if rec_type == "scatter":
-        if len(numeric_cols) >= 2:
-            x_scat = x_col if x_col in numeric_cols else numeric_cols[0]
-            y_scat = y_col if (y_col in numeric_cols and y_col != x_scat) else (numeric_cols[1] if len(numeric_cols) > 1 else numeric_cols[0])
-            return "scatter", {
-                "title": title,
-                "x": x_scat,
-                "y": y_scat,
-                "color": color_col
-            }
-        else:
-            rec_type = "bar" if (numeric_cols and (categorical_cols or datetime_cols)) else "table"
+        if len(numeric_cols) >= 2 and row_count >= 3:
+            x_s = x_col if x_col in numeric_cols else numeric_cols[0]
+            y_s = y_col if (y_col in numeric_cols and y_col != x_s) else next(c for c in numeric_cols if c != x_s)
+            return "scatter", {"title": title, "x": x_s, "y": y_s, "color": color_col}
+        downgrade("A scatter plot needs two numeric columns and a few rows.")
+        rec_type = "bar" if (numeric_cols and has_dimension) else "table"
 
+    # ---- 3. Line -------------------------------------------------
     if rec_type == "line":
-        if y_col in numeric_cols and (datetime_cols or x_col in numeric_cols or x_col in datetime_cols):
-            x_line = datetime_cols[0] if datetime_cols else x_col
-            return "line", {
-                "title": title,
-                "x": x_line,
-                "y": y_col,
-                "series": valid_series if len(valid_series) > 1 else [y_col],
-                "sort_x": True
-            }
-        elif y_col in numeric_cols and categorical_cols:
+        x_line = datetime_cols[0] if datetime_cols else (x_col if x_col in numeric_cols else None)
+
+        if y_col and x_line and x_line != y_col and row_count >= 2:
+            if df_clean[x_line].duplicated().any():
+                downgrade("The same x value appears more than once, so a line would zigzag.")
+                rec_type = "table"
+            else:
+                return "line", {
+                    "title": title,
+                    "x": x_line,
+                    "y": y_col,
+                    "series": series,
+                    "sort_x": True,
+                }
+        elif y_col and dimension_cols:
+            downgrade("The x-axis is not a date or an ordered number, so bars fit better.")
             rec_type = "bar"
         else:
+            downgrade("There is no date or numeric column to draw a trend against.")
             rec_type = "table"
+
+    # ---- 4. Pie --------------------------------------------------
     if rec_type == "pie":
-        if y_col in numeric_cols and (categorical_cols or x_col in cols):
-            x_pie = x_col if x_col in cols else (categorical_cols[0] if categorical_cols else cols[0])
-            non_neg = (df_clean[y_col].dropna() >= 0).all()
-            if not non_neg:
+        x_pie = x_col if x_col in (dimension_cols + datetime_cols) else next(iter(dimension_cols + datetime_cols), None)
+
+        if y_col and x_pie:
+            values = df_clean[y_col].dropna()
+            cardinality = int(df_clean[x_pie].nunique(dropna=True))
+
+            if (values < 0).any() or values.sum() <= 0:
+                downgrade("A pie chart needs positive values.")
+                rec_type = "bar"
+            elif cardinality < 2:
+                downgrade("There is only one category to compare.")
+                rec_type = "bar"
+            elif cardinality > MAX_PIE_CATEGORIES:
+                downgrade("Too many categories for a pie chart.")
                 rec_type = "bar"
             else:
-                cardinality = df_clean[x_pie].nunique(dropna=True)
                 return "pie", {
                     "title": title,
                     "x": x_pie,
                     "y": y_col,
-                    "group_other": cardinality > 6
+                    "group_other": bool(cardinality > 6),
                 }
         else:
+            downgrade("A pie chart needs a category column and a numeric column.")
             rec_type = "table"
 
+    # ---- 5. Bar --------------------------------------------------
     if rec_type == "bar":
-        if y_col in numeric_cols and (x_col in cols):
-            cardinality = df_clean[x_col].nunique(dropna=True) if x_col in cols else row_count
-            max_label_len = df_clean[x_col].astype(str).map(len).max() if x_col in cols and len(df_clean) > 0 else 0
-            use_horizontal = cardinality > 8 or max_label_len > 12
+        if not (x_col and y_col):
+            downgrade("There is no numeric column to plot.")
+        elif row_count > MAX_BARS:
+            downgrade(f"{row_count} rows is too many to read as bars.")
+        else:
+            cardinality = int(df_clean[x_col].nunique(dropna=True))
+            max_label_len = int(df_clean[x_col].astype(str).str.len().max())
+            horizontal = cardinality > 8 or max_label_len > 16
 
             return "bar", {
                 "title": title,
                 "x": x_col,
                 "y": y_col,
-                "series": valid_series if len(valid_series) > 1 else [y_col],
+                "series": series,
                 "color": color_col,
-                "layout": "horizontal" if use_horizontal else "vertical"
+                "layout": "horizontal" if horizontal else "vertical",
             }
-        elif len(numeric_cols) > 0 and len(cols) > 1:
-            x_bar = (categorical_cols + datetime_cols + cols)[0]
-            y_bar = numeric_cols[0]
-            return "bar", {
-                "title": title,
-                "x": x_bar,
-                "y": y_bar,
-                "layout": "horizontal"
-            }
-        else:
-            rec_type = "table"
 
-    return "table", {
-        "title": title,
-        "columns": cols
-    }
+    # ---- 6. Table fallback ---------------------------------------
+    return "table", {"title": title, "columns": cols, "reason": why[0]}

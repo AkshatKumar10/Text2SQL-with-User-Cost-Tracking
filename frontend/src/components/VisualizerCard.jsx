@@ -1,131 +1,184 @@
 import React, { useMemo } from 'react';
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
-  ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
+  ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
-import { BarChart3, LineChart as LineIcon, PieChart as PieIcon, Hash, ScatterChart as ScatterIcon, Table as TableIcon, Inbox } from 'lucide-react';
+import {
+  BarChart3,
+  LineChart as LineIcon,
+  PieChart as PieIcon,
+  ScatterChart as ScatterIcon,
+  Hash,
+  Table2,
+  Inbox,
+  Sparkles,
+  ArrowRight,
+} from 'lucide-react';
 
-const COLORS = [
-  '#38bdf8', '#818cf8', '#c084fc', '#f472b6',
-  '#34d399', '#fbbf24', '#f87171', '#a78bfa',
-  '#60a5fa', '#a78bfa', '#f472b6', '#4ade80'
-];
-
+const COLORS = ['#60a5fa', '#a78bfa', '#34d399', '#fbbf24', '#f472b6', '#22d3ee', '#fb7185', '#818cf8'];
+const GRID = 'rgba(255,255,255,0.06)';
+const TICK = { fill: '#7b818a', fontSize: 11 };
 const SUPPORTED_TYPES = new Set(['bar', 'line', 'pie', 'scatter', 'kpi', 'table', 'none']);
 
-function formatNumberCompact(num) {
-  if (num === null || num === undefined || isNaN(num)) return '-';
-  const abs = Math.abs(num);
-  if (abs >= 1e12) return (num / 1e12).toFixed(1) + 'T';
-  if (abs >= 1e9) return (num / 1e9).toFixed(1) + 'B';
-  if (abs >= 1e6) return (num / 1e6).toFixed(1) + 'M';
-  if (abs >= 1e3 && abs >= 10000) return (num / 1e3).toFixed(1) + 'K';
-  return num.toLocaleString(undefined, { maximumFractionDigits: 2 });
-}
+const compact = (n) =>
+  new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(n);
 
-function formatKPIValue(val, format, unit, currency = 'USD') {
+const fullNumber = (n) =>
+  Math.abs(n) >= 1e6
+    ? compact(n)
+    : n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+const trunc = (s, n) => {
+  const t = String(s ?? '');
+  return t.length > n ? `${t.slice(0, n - 1)}…` : t;
+};
+
+const isNumericKey = (rows, key) =>
+  !!key &&
+  rows.some((r) => typeof r[key] === 'number') &&
+  rows.every((r) => r[key] === null || r[key] === undefined || typeof r[key] === 'number');
+
+function formatKPI(val, format, unit, currency = 'USD') {
   if (val === null || val === undefined) return '-';
+  const num = typeof val === 'number' ? val : Number(val);
+  if (Number.isNaN(num)) return String(val);
 
-  const num = typeof val === 'number' ? val : parseFloat(val);
-  const isNum = !isNaN(num);
-
-  if (!isNum) return String(val);
-
-  if (format === 'percentage') {
-    return `${(num > 1 ? num : num * 100).toFixed(1)}%`;
-  }
+  if (format === 'percentage') return `${(Math.abs(num) <= 1 ? num * 100 : num).toFixed(1)}%`;
   if (format === 'currency') {
     const symbol = currency === 'EUR' ? '€' : currency === 'GBP' ? '£' : '$';
-    return `${symbol}${formatNumberCompact(num)}`;
+    return `${symbol}${fullNumber(num)}`;
   }
-  if (format === 'unit' && unit) {
-    return `${formatNumberCompact(num)} ${unit}`;
-  }
-  if (format === 'integer') {
-    return formatNumberCompact(Math.round(num));
-  }
-  return formatNumberCompact(num);
+  if (format === 'unit' && unit) return `${fullNumber(num)} ${unit}`;
+  if (format === 'integer') return fullNumber(Math.round(num));
+  return fullNumber(num);
 }
 
-export function VisualizerCard({ chartType: rawChartType, chartConfig = {}, data = [], summary, title }) {
+const cell = (v) => {
+  if (v === null || v === undefined) return '-';
+  if (typeof v === 'boolean') return v ? 'True' : 'False';
+  if (typeof v === 'number') return Number.isInteger(v) ? String(v) : String(Math.round(v * 100) / 100);
+  return String(v);
+};
+
+function ChartTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-xl border border-white/[0.1] bg-[#0d0f13]/95 px-3.5 py-2.5 shadow-2xl backdrop-blur">
+      {label !== undefined && label !== null && label !== '' && (
+        <p className="text-[11px] text-slate-400">{String(label)}</p>
+      )}
+      {payload.map((p, i) => (
+        <p key={i} className="mt-0.5 font-mono text-sm font-semibold text-white">
+          <span className="font-sans text-[11px] font-normal text-slate-400">{p.name ?? p.dataKey}: </span>
+          {typeof p.value === 'number' ? p.value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(p.value)}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+const typeMeta = {
+  bar: { icon: BarChart3, label: 'Bar chart' },
+  line: { icon: LineIcon, label: 'Line chart' },
+  pie: { icon: PieIcon, label: 'Pie chart' },
+  scatter: { icon: ScatterIcon, label: 'Scatter plot' },
+  kpi: { icon: Hash, label: 'Single value' },
+  table: { icon: Table2, label: 'Table' },
+  none: { icon: Inbox, label: 'No results' },
+};
+
+export function VisualizerCard({
+  chartType: rawChartType,
+  chartConfig: rawConfig,
+  data,
+  summary,
+  title,
+  onViewTable, 
+}) {
+  const chartConfig = rawConfig || {};
+
+  const numericKeys = useMemo(() => {
+    const keys = [
+      chartConfig.y,
+      chartConfig.kpi_value_column,
+      ...(Array.isArray(chartConfig.series) ? chartConfig.series : []),
+    ];
+    if (rawChartType === 'scatter') keys.push(chartConfig.x);
+    return new Set(keys.filter(Boolean));
+  }, [chartConfig, rawChartType]);
+
   const normalizedData = useMemo(() => {
     if (!Array.isArray(data) || data.length === 0) return [];
     return data.map((row) => {
-      const cleanRow = { ...row };
-      Object.keys(cleanRow).forEach((key) => {
-        const val = cleanRow[key];
-        if (typeof val === 'string' && !isNaN(val) && val.trim() !== '') {
-          cleanRow[key] = parseFloat(val);
-        }
+      const clean = { ...row };
+      numericKeys.forEach((key) => {
+        const v = clean[key];
+        if (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v.trim())) clean[key] = Number(v);
       });
-      return cleanRow;
+      return clean;
     });
-  }, [data]);
+  }, [data, numericKeys]);
 
-  const columns = useMemo(() => {
-    if (normalizedData.length === 0) return [];
-    return Object.keys(normalizedData[0]);
-  }, [normalizedData]);
+  const columns = useMemo(
+    () => (normalizedData.length ? Object.keys(normalizedData[0]) : []),
+    [normalizedData]
+  );
+
+  const xKey = chartConfig.x && columns.includes(chartConfig.x) ? chartConfig.x : columns[0];
+  const yKey =
+    chartConfig.y && columns.includes(chartConfig.y)
+      ? chartConfig.y
+      : columns.find((c) => c !== xKey && isNumericKey(normalizedData, c));
+  const kpiKey =
+    chartConfig.kpi_value_column && columns.includes(chartConfig.kpi_value_column)
+      ? chartConfig.kpi_value_column
+      : yKey;
+
+  const seriesList = useMemo(() => {
+    const list = (Array.isArray(chartConfig.series) ? chartConfig.series : []).filter(
+      (k) => columns.includes(k) && isNumericKey(normalizedData, k)
+    );
+    return list.length ? list : yKey ? [yKey] : [];
+  }, [chartConfig, columns, normalizedData, yKey]);
 
   const validatedType = useMemo(() => {
-    let type = String(rawChartType || '').toLowerCase().trim();
-    if (!SUPPORTED_TYPES.has(type)) type = 'table';
     if (normalizedData.length === 0) return 'none';
 
-    const xKey = chartConfig.x;
-    const yKey = chartConfig.y;
-    const kpiKey = chartConfig.kpi_value_column;
+    let type = String(rawChartType || '').toLowerCase().trim();
+    if (!SUPPORTED_TYPES.has(type) || type === 'none') type = 'table';
 
-    if (type === 'kpi' && (!kpiKey || !columns.includes(kpiKey))) {
-      type = 'table';
-    }
-    if (type === 'scatter') {
-      const xValid = xKey && columns.includes(xKey) && typeof normalizedData[0][xKey] === 'number';
-      const yValid = yKey && columns.includes(yKey) && typeof normalizedData[0][yKey] === 'number';
-      if (!xValid || !yValid) type = 'table';
-    }
-    if (type === 'bar' || type === 'line') {
-      if (!yKey || !columns.includes(yKey) || typeof normalizedData[0][yKey] !== 'number') {
-        type = 'table';
-      }
-    }
-    if (type === 'pie') {
-      if (!yKey || !columns.includes(yKey) || typeof normalizedData[0][yKey] !== 'number') {
-        type = 'table';
-      }
-    }
+    const numeric = (k) => isNumericKey(normalizedData, k);
+
+    if (type === 'kpi' && !numeric(kpiKey)) type = 'table';
+    if ((type === 'bar' || type === 'line' || type === 'pie') && !(xKey && numeric(yKey))) type = 'table';
+    if (type === 'scatter' && !(numeric(xKey) && numeric(yKey))) type = 'table';
 
     return type;
-  }, [rawChartType, normalizedData, columns, chartConfig]);
+  }, [rawChartType, normalizedData, xKey, yKey, kpiKey]);
 
-  const xKey = chartConfig.x || columns[0];
-  const yKey = chartConfig.y || (columns[1] || columns[0]);
-  const chartTitle = chartConfig.title || title || 'Data Visualization';
+  const chartTitle = chartConfig.title || title || 'Visualization';
 
-  const pieData = useMemo(() => {
+  const pieSlices = useMemo(() => {
     if (validatedType !== 'pie') return [];
-    if (normalizedData.length <= 6) return normalizedData;
+    let slices = normalizedData
+      .filter((r) => typeof r[yKey] === 'number' && r[yKey] > 0)
+      .map((r) => ({ name: String(r[xKey]), value: r[yKey] }))
+      .sort((a, b) => b.value - a.value);
 
-    const sorted = [...normalizedData].sort((a, b) => (b[yKey] || 0) - (a[yKey] || 0));
-    const top5 = sorted.slice(0, 5);
-    const rest = sorted.slice(5);
-
-    const otherSum = rest.reduce((acc, row) => acc + (Number(row[yKey]) || 0), 0);
-    if (otherSum > 0) {
-      top5.push({ [xKey]: 'Other', [yKey]: otherSum });
+    if (slices.length > 7) {
+      const rest = slices.slice(6).reduce((s, r) => s + r.value, 0);
+      slices = [...slices.slice(0, 6), { name: 'Other', value: rest }];
     }
-    return top5;
+    return slices;
   }, [normalizedData, validatedType, xKey, yKey]);
 
   const lineData = useMemo(() => {
-    if (validatedType !== 'line') return normalizedData;
-    if (!chartConfig.sort_x) return normalizedData;
+    if (validatedType !== 'line' || !chartConfig.sort_x) return normalizedData;
     return [...normalizedData].sort((a, b) => {
-      const valA = a[xKey];
-      const valB = b[xKey];
-      if (valA < valB) return -1;
-      if (valA > valB) return 1;
-      return 0;
+      const A = a[xKey];
+      const B = b[xKey];
+      if (typeof A === 'number' && typeof B === 'number') return A - B;
+      return String(A).localeCompare(String(B));
     });
   }, [normalizedData, validatedType, xKey, chartConfig]);
 
@@ -133,37 +186,29 @@ export function VisualizerCard({ chartType: rawChartType, chartConfig = {}, data
     switch (validatedType) {
       case 'none':
         return (
-          <div className="flex flex-col items-center justify-center p-12 text-center bg-slate-900/40 rounded-xl border border-slate-800/80">
-            <div className="p-3 bg-slate-800/60 text-slate-400 rounded-2xl mb-3">
-              <Inbox className="w-8 h-8" />
+          <div className="flex flex-col items-center rounded-xl border border-dashed border-white/[0.1] bg-white/[0.015] px-6 py-14 text-center">
+            <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.025]">
+              <Inbox className="h-4 w-4 text-slate-500" />
             </div>
-            <h4 className="text-base font-semibold text-slate-200">No Query Results Returned</h4>
-            <p className="text-xs text-slate-500 max-w-sm mt-1">
-              The query executed successfully but returned 0 rows matching your criteria.
+            <p className="text-sm font-medium text-slate-200">No rows returned</p>
+            <p className="mt-1 max-w-sm text-xs leading-5 text-slate-500">
+              The query ran, but nothing matched. Try rewording your question.
             </p>
           </div>
         );
 
       case 'kpi': {
-        const kpiValCol = chartConfig.kpi_value_column || yKey || columns[0];
-        const val = normalizedData[0] ? normalizedData[0][kpiValCol] : null;
-        const formattedVal = formatKPIValue(
-          val,
-          chartConfig.format,
-          chartConfig.unit,
-          chartConfig.currency
-        );
-
+        const val = normalizedData[0]?.[kpiKey];
         return (
-          <div className="flex flex-col items-center justify-center p-10 bg-gradient-to-br from-indigo-950/40 via-slate-900/60 to-slate-950/80 rounded-2xl border border-indigo-500/20 shadow-xl">
-            <div className="p-3.5 bg-indigo-500/10 text-indigo-400 rounded-2xl mb-3 border border-indigo-500/20">
-              <Hash className="w-7 h-7" />
-            </div>
-            <span className="text-xs font-semibold tracking-wider text-slate-400 uppercase">{chartTitle}</span>
-            <span className="text-4xl sm:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-indigo-300 to-purple-400 mt-2 tracking-tight">
-              {formattedVal}
+          <div className="relative flex flex-col items-center justify-center overflow-hidden rounded-xl border border-white/[0.08] bg-[#0b0d11] px-6 py-14">
+            <div className="pointer-events-none absolute left-1/2 top-0 h-40 w-80 -translate-x-1/2 rounded-full bg-blue-500/[0.12] blur-3xl" />
+            <span className="relative text-xs font-medium text-slate-400">{chartTitle}</span>
+            <span className="relative mt-3 bg-gradient-to-r from-white via-[#cbd5e1] to-[#7dd3fc] bg-clip-text text-5xl font-semibold tracking-[-0.04em] text-transparent sm:text-6xl">
+              {formatKPI(val, chartConfig.format, chartConfig.unit, chartConfig.currency)}
             </span>
-            <span className="text-[11px] text-slate-500 mt-2 font-mono">{kpiValCol}</span>
+            <span className="relative mt-3 rounded-md border border-white/[0.07] bg-white/[0.025] px-2.5 py-1 font-mono text-[11px] text-slate-500">
+              {kpiKey}
+            </span>
           </div>
         );
       }
@@ -171,83 +216,69 @@ export function VisualizerCard({ chartType: rawChartType, chartConfig = {}, data
       case 'scatter':
         return (
           <ResponsiveContainer width="100%" height={340}>
-            <ScatterChart margin={{ top: 20, right: 30, left: 20, bottom: 25 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-              <XAxis
-                dataKey={xKey}
-                name={xKey}
-                stroke="#64748b"
-                tick={{ fill: '#94a3b8', fontSize: 12 }}
-                unit=""
-              />
-              <YAxis
-                dataKey={yKey}
-                name={yKey}
-                stroke="#64748b"
-                tick={{ fill: '#94a3b8', fontSize: 12 }}
-                unit=""
-              />
-              <Tooltip
-                cursor={{ strokeDasharray: '3 3' }}
-                contentStyle={{
-                  backgroundColor: '#0f172a',
-                  border: '1px solid #334155',
-                  borderRadius: '12px',
-                  color: '#f8fafc',
-                  boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)'
-                }}
-              />
-              <Scatter name={chartTitle} data={normalizedData} fill="#38bdf8" />
+            <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 8 }}>
+              <CartesianGrid stroke={GRID} />
+              <XAxis dataKey={xKey} name={xKey} type="number" tick={TICK} tickLine={false} axisLine={{ stroke: GRID }} tickFormatter={compact} />
+              <YAxis dataKey={yKey} name={yKey} type="number" tick={TICK} tickLine={false} axisLine={false} tickFormatter={compact} width={52} />
+              <Tooltip content={<ChartTooltip />} cursor={{ strokeDasharray: '3 3', stroke: 'rgba(255,255,255,0.2)' }} />
+              <Scatter data={normalizedData} fill="#60a5fa" fillOpacity={0.8} />
             </ScatterChart>
           </ResponsiveContainer>
         );
 
       case 'bar': {
-        const isVertical = chartConfig.layout === 'vertical';
-        const seriesList = (chartConfig.series && chartConfig.series.length > 0) ? chartConfig.series : [yKey];
+        const horizontal = chartConfig.layout === 'horizontal';
+        const tilt = !horizontal && normalizedData.length > 5;
+        const height = horizontal ? Math.max(320, normalizedData.length * 34 + 48) : 340;
 
         return (
-          <ResponsiveContainer width="100%" height={Math.max(340, normalizedData.length * (isVertical ? 30 : 0))}>
+          <ResponsiveContainer width="100%" height={height}>
             <BarChart
               data={normalizedData}
-              layout={isVertical ? 'vertical' : 'horizontal'}
-              margin={{ top: 20, right: 30, left: isVertical ? 80 : 20, bottom: isVertical ? 20 : 45 }}
+              layout={horizontal ? 'vertical' : 'horizontal'}
+              margin={{ top: 8, right: 16, left: horizontal ? 8 : 0, bottom: 0 }}
             >
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={!isVertical} horizontal={isVertical} />
-              {isVertical ? (
+              <CartesianGrid stroke={GRID} vertical={horizontal} horizontal={!horizontal} />
+              {horizontal ? (
                 <>
-                  <XAxis type="number" stroke="#64748b" tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                  <YAxis dataKey={xKey} type="category" stroke="#64748b" tick={{ fill: '#94a3b8', fontSize: 11 }} width={80} />
+                  <XAxis type="number" tick={TICK} tickLine={false} axisLine={false} tickFormatter={compact} />
+                  <YAxis
+                    type="category"
+                    dataKey={xKey}
+                    tick={TICK}
+                    tickLine={false}
+                    axisLine={false}
+                    width={130}
+                    interval={0}
+                    tickFormatter={(v) => trunc(v, 18)}
+                  />
                 </>
               ) : (
                 <>
                   <XAxis
                     dataKey={xKey}
-                    stroke="#64748b"
-                    tick={{ fill: '#94a3b8', fontSize: 11 }}
+                    tick={TICK}
+                    tickLine={false}
+                    axisLine={{ stroke: GRID }}
                     interval={normalizedData.length > 15 ? 'preserveStartEnd' : 0}
-                    angle={normalizedData.length > 8 ? -30 : 0}
-                    textAnchor={normalizedData.length > 8 ? 'end' : 'middle'}
+                    tickFormatter={(v) => trunc(v, 14)}
+                    angle={tilt ? -30 : 0}
+                    textAnchor={tilt ? 'end' : 'middle'}
+                    height={tilt ? 58 : 30}
                   />
-                  <YAxis stroke="#64748b" tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                  <YAxis tick={TICK} tickLine={false} axisLine={false} tickFormatter={compact} width={52} />
                 </>
               )}
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#0f172a',
-                  border: '1px solid #334155',
-                  borderRadius: '12px',
-                  color: '#f8fafc',
-                  boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)'
-                }}
-              />
-              {seriesList.length > 1 && <Legend verticalAlign="top" wrapperStyle={{ paddingBottom: '10px' }} />}
-              {seriesList.map((sKey, idx) => (
+              <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+              {seriesList.length > 1 && <Legend verticalAlign="top" wrapperStyle={{ paddingBottom: 8, fontSize: 12 }} />}
+              {seriesList.map((key, i) => (
                 <Bar
-                  key={sKey}
-                  dataKey={sKey}
-                  fill={COLORS[idx % COLORS.length]}
-                  radius={isVertical ? [0, 6, 6, 0] : [6, 6, 0, 0]}
+                  key={key}
+                  dataKey={key}
+                  fill={COLORS[i % COLORS.length]}
+                  fillOpacity={0.9}
+                  maxBarSize={56}
+                  radius={horizontal ? [0, 6, 6, 0] : [6, 6, 0, 0]}
                 />
               ))}
             </BarChart>
@@ -256,40 +287,34 @@ export function VisualizerCard({ chartType: rawChartType, chartConfig = {}, data
       }
 
       case 'line': {
-        const seriesList = (chartConfig.series && chartConfig.series.length > 0) ? chartConfig.series : [yKey];
-
+        const tilt = lineData.length > 8;
         return (
           <ResponsiveContainer width="100%" height={340}>
-            <LineChart data={lineData} margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+            <LineChart data={lineData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+              <CartesianGrid stroke={GRID} vertical={false} />
               <XAxis
                 dataKey={xKey}
-                stroke="#64748b"
-                tick={{ fill: '#94a3b8', fontSize: 11 }}
+                tick={TICK}
+                tickLine={false}
+                axisLine={{ stroke: GRID }}
                 interval={lineData.length > 12 ? 'preserveStartEnd' : 0}
-                angle={lineData.length > 8 ? -25 : 0}
-                textAnchor={lineData.length > 8 ? 'end' : 'middle'}
+                tickFormatter={(v) => trunc(v, 12)}
+                angle={tilt ? -30 : 0}
+                textAnchor={tilt ? 'end' : 'middle'}
+                height={tilt ? 58 : 30}
               />
-              <YAxis stroke="#64748b" tick={{ fill: '#94a3b8', fontSize: 12 }} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#0f172a',
-                  border: '1px solid #334155',
-                  borderRadius: '12px',
-                  color: '#f8fafc',
-                  boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)'
-                }}
-              />
-              {seriesList.length > 1 && <Legend verticalAlign="top" wrapperStyle={{ paddingBottom: '10px' }} />}
-              {seriesList.map((sKey, idx) => (
+              <YAxis tick={TICK} tickLine={false} axisLine={false} tickFormatter={compact} width={52} />
+              <Tooltip content={<ChartTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.15)' }} />
+              {seriesList.length > 1 && <Legend verticalAlign="top" wrapperStyle={{ paddingBottom: 8, fontSize: 12 }} />}
+              {seriesList.map((key, i) => (
                 <Line
-                  key={sKey}
+                  key={key}
                   type="monotone"
-                  dataKey={sKey}
-                  stroke={COLORS[idx % COLORS.length]}
-                  strokeWidth={3}
-                  dot={{ fill: COLORS[idx % COLORS.length], r: 4 }}
-                  activeDot={{ r: 7, strokeWidth: 2 }}
+                  dataKey={key}
+                  stroke={COLORS[i % COLORS.length]}
+                  strokeWidth={2.5}
+                  dot={{ r: 3, fill: '#0d0f13', stroke: COLORS[i % COLORS.length], strokeWidth: 2 }}
+                  activeDot={{ r: 5.5, strokeWidth: 2, stroke: '#0d0f13', fill: COLORS[i % COLORS.length] }}
                 />
               ))}
             </LineChart>
@@ -297,120 +322,148 @@ export function VisualizerCard({ chartType: rawChartType, chartConfig = {}, data
         );
       }
 
-      case 'pie':
+      case 'pie': {
+        const total = pieSlices.reduce((s, r) => s + r.value, 0);
         return (
-          <ResponsiveContainer width="100%" height={340}>
-            <PieChart>
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#0f172a',
-                  border: '1px solid #334155',
-                  borderRadius: '12px',
-                  color: '#f8fafc',
-                  boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)'
-                }}
-              />
-              <Pie
-                data={pieData}
-                dataKey={yKey}
-                nameKey={xKey}
-                cx="50%"
-                cy="50%"
-                outerRadius={110}
-                innerRadius={55}
-                paddingAngle={4}
-              >
-                {pieData.map((_, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Legend verticalAlign="bottom" wrapperStyle={{ paddingTop: '15px' }} />
-            </PieChart>
-          </ResponsiveContainer>
-        );
+          <div className="grid items-center gap-6 md:grid-cols-2">
+            <div className="relative min-w-0">
+              <ResponsiveContainer width="100%" height={280}>
+                <PieChart>
+                  <Tooltip content={<ChartTooltip />} />
+                  <Pie data={pieSlices} dataKey="value" nameKey="name" innerRadius={70} outerRadius={110} paddingAngle={3} stroke="none">
+                    {pieSlices.map((_, i) => (
+                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-[11px] text-slate-500">Total</span>
+                <span className="font-mono text-xl font-semibold text-white">{compact(total)}</span>
+              </div>
+            </div>
 
-      case 'table':
-      default:
-        return (
-          <div className="overflow-x-auto rounded-xl border border-slate-800/80 bg-slate-950/60 max-h-96">
-            <table className="w-full text-left text-xs text-slate-300">
-              <thead className="sticky top-0 bg-slate-900 border-b border-slate-800 text-slate-400 uppercase font-mono text-[11px]">
-                <tr>
-                  {columns.map((col) => (
-                    <th key={col} className="px-4 py-3 font-semibold whitespace-nowrap">
-                      {col}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/50 font-sans">
-                {normalizedData.map((row, idx) => (
-                  <tr key={idx} className="hover:bg-slate-900/40 transition-colors">
-                    {columns.map((col) => {
-                      const val = row[col];
-                      let displayVal = val;
-                      if (val === null || val === undefined) displayVal = '-';
-                      else if (typeof val === 'boolean') displayVal = val ? 'True' : 'False';
-                      else if (typeof val === 'number') displayVal = formatNumberCompact(val);
-
-                      return (
-                        <td key={col} className="px-4 py-2.5 whitespace-nowrap max-w-xs truncate">
-                          {String(displayVal)}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <ul className="min-w-0 space-y-1.5">
+              {pieSlices.map((s, i) => (
+                <li
+                  key={s.name + i}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2"
+                >
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />
+                    <span className="truncate text-xs text-slate-300">{s.name}</span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-3 font-mono text-xs">
+                    <span className="text-slate-500">{((s.value / total) * 100).toFixed(0)}%</span>
+                    <span className="text-slate-200">{fullNumber(s.value)}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
           </div>
         );
+      }
+
+      case 'table':
+      default: {
+        const preview = normalizedData.slice(0, 8);
+        return (
+          <div className="space-y-4">
+            <div className="flex items-start gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.03]">
+                <Table2 className="h-4 w-4 text-slate-400" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-slate-200">This result reads best as a table</p>
+                {chartConfig.reason && (
+                  <p className="mt-1 text-xs leading-5 text-slate-500">{chartConfig.reason}</p>
+                )}
+              </div>
+              {onViewTable && (
+                <button
+                  onClick={onViewTable}
+                  className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-white/[0.09] bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-white/[0.07]"
+                >
+                  Full table
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="max-h-80 overflow-auto rounded-xl border border-white/[0.07] bg-[#0b0d11]">
+              <table className="w-full text-left text-xs">
+                <thead className="sticky top-0 border-b border-white/[0.07] bg-[#0b0d11] text-slate-400">
+                  <tr>
+                    {columns.map((c) => (
+                      <th key={c} className="whitespace-nowrap px-4 py-3 font-semibold">{c}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.05]">
+                  {preview.map((row, i) => (
+                    <tr key={i} className="hover:bg-white/[0.03]">
+                      {columns.map((c) => (
+                        <td key={c} className="max-w-xs truncate whitespace-nowrap px-4 py-2.5 text-slate-300">
+                          {cell(row[c])}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {normalizedData.length > preview.length && (
+              <p className="text-xs text-slate-500">
+                Showing {preview.length} of {normalizedData.length} rows.
+              </p>
+            )}
+          </div>
+        );
+      }
     }
   };
 
-  const getIcon = () => {
-    switch (validatedType) {
-      case 'bar': return <BarChart3 className="w-4 h-4 text-cyan-400" />;
-      case 'line': return <LineIcon className="w-4 h-4 text-purple-400" />;
-      case 'pie': return <PieIcon className="w-4 h-4 text-pink-400" />;
-      case 'scatter': return <ScatterIcon className="w-4 h-4 text-indigo-400" />;
-      case 'kpi': return <Hash className="w-4 h-4 text-emerald-400" />;
-      case 'none': return <Inbox className="w-4 h-4 text-slate-500" />;
-      case 'table':
-      default: return <TableIcon className="w-4 h-4 text-blue-400" />;
-    }
-  };
+  const meta = typeMeta[validatedType] || typeMeta.table;
+  const MetaIcon = meta.icon;
+  const isChart = ['bar', 'line', 'pie', 'scatter'].includes(validatedType);
 
   return (
-    <div className="glass-panel rounded-2xl p-6 border border-slate-800 shadow-2xl relative overflow-hidden space-y-4">
-      <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
-        <div className="flex items-center gap-2.5">
-          <div className="p-2 bg-slate-800/80 rounded-xl border border-slate-700/50">
-            {getIcon()}
+    <div className="relative overflow-hidden rounded-2xl border border-white/[0.09] bg-[#0d0f13] shadow-2xl">
+      <div className="pointer-events-none absolute -right-16 -top-24 h-64 w-64 rounded-full bg-blue-500/[0.07] blur-3xl" />
+
+      <div className="relative flex items-center justify-between gap-3 border-b border-white/[0.07] px-5 py-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.03]">
+            <MetaIcon className="h-4 w-4 text-blue-400" />
           </div>
-          <div>
-            <h3 className="font-semibold text-slate-100 text-base">{chartTitle}</h3>
-            <p className="text-xs text-slate-400">
-              Visualization Mode:{' '}
-              <span className="uppercase text-cyan-400 font-semibold font-mono">
-                {validatedType}
-              </span>
+          <div className="min-w-0">
+            <h3 className="truncate text-sm font-semibold tracking-[-0.01em] text-white">{chartTitle}</h3>
+            <p className="mt-0.5 truncate text-[11px] text-slate-500">
+              {isChart && yKey && xKey ? `${yKey} by ${xKey}` : 'Auto-selected visualization'}
             </p>
           </div>
         </div>
+        <span className="shrink-0 rounded-md border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 text-[11px] font-medium text-slate-300">
+          {meta.label}
+        </span>
       </div>
+
+      <div className="relative p-5">{renderChart()}</div>
 
       {summary && (
-        <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80 text-xs text-slate-300 leading-relaxed">
-          <span className="font-semibold text-cyan-400">Analyst Summary: </span>
-          {summary}
+        <div className="relative border-t border-white/[0.07] px-5 py-4">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-blue-400/20 bg-blue-400/[0.08]">
+              <Sparkles className="h-3.5 w-3.5 text-blue-400" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-slate-200">Insight</p>
+              <p className="mt-1 text-xs leading-6 text-slate-400">{summary}</p>
+            </div>
+          </div>
         </div>
       )}
-
-      <div className="w-full">
-        {renderChart()}
-      </div>
     </div>
   );
 }

@@ -9,7 +9,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from .state import AgentState
 from .visualization import profile_dataframe, validate_and_normalize_chart_config
-from database import DB_PATH, run_sql
+from database import DB_PATH, run_sql, get_user_db_path
 
 # def get_llm():
 #     return ChatGoogleGenerativeAI(
@@ -290,6 +290,11 @@ def val_node(state: AgentState) -> Dict[str, Any]:
     
     try:
         conn = sqlite3.connect(DB_PATH)
+        user_id = state.get("user_id")
+        if user_id:
+            user_db_path = get_user_db_path(user_id)
+            if user_db_path and os.path.exists(user_db_path):
+                conn.execute(f"ATTACH DATABASE '{user_db_path}' AS udb;")
         cur = conn.cursor()
         cur.execute(f"EXPLAIN QUERY PLAN {sql}")
         conn.close()
@@ -365,38 +370,38 @@ def exec_node(state: AgentState) -> Dict[str, Any]:
             "df_result": [],
             "columns": [],
             "row_count": 0,
+            "is_valid": False,
             "error_message": f"Execution error: {str(e)}"
         }
 
 # Agent Analyst Node
 def analyst_node(state: AgentState) -> Dict[str, Any]:
-    llm = get_llm()
     recs = state.get("df_result", [])
-    
-    if not recs or len(recs) == 0:
+ 
+    if not recs:
         return {
             "analyst_summary": "The query executed successfully but returned 0 rows.",
             "chart_type": "none",
-            "chart_config": {"title": "No Results Found", "reason": "Query returned 0 rows."}
+            "chart_config": {"title": "No Results Found", "reason": "Query returned 0 rows."},
         }
-    
+ 
     df = pd.DataFrame(recs)
-    profile = profile_dataframe(df)
-
+    profile = profile_dataframe(df, sample_size=25)
+ 
     prompt = f"""You are a senior Business Intelligence Data Analyst and Visualization Specialist.
 Analyze the query result statistics and recommend the single best visualization.
-
+ 
 User Question: {state['question']}
 SQL Query: {state['sql_query']}
-
+ 
 Dataset Profile:
 - Total Row Count: {profile['row_count']}
 - Column Metadata & Statistics:
-{json.dumps(profile['profiles'], indent=2)}
-
-Representative Data Sample (up to 5 rows):
-{json.dumps(profile['sample'], indent=2)}
-
+{json.dumps(profile['profiles'], indent=2, default=str)}
+ 
+Data Sample (first {len(profile['sample'])} of {profile['row_count']} rows):
+{json.dumps(profile['sample'], indent=2, default=str)}
+ 
 Provide your recommendation in strict JSON format matching this schema:
 {{
   "summary": "2-3 sentence concise business summary of what the data shows",
@@ -409,46 +414,52 @@ Provide your recommendation in strict JSON format matching this schema:
     "kpi_value_column": "optional_exact_column_for_single_metric"
   }}
 }}
-
+ 
 Visualization Selection Rules:
-- "kpi": Exactly 1 aggregate summary value or 1 row result with key metric.
-- "bar": Discrete categorical or temporal categories compared against numeric values.
-- "line": Trend or chronological sequence over date/time or ordered numeric X-axis.
-- "pie": Proportions of a whole (only when categorical X has 6 or fewer unique items and positive Y values).
+- "kpi": Exactly 1 row with one key numeric value.
+- "bar": Discrete categories compared against a numeric value.
+- "line": Trend over date/time or an ordered numeric x-axis, with one row per x value.
+- "pie": Proportions of a whole (only when the category column has 6 or fewer unique items and all values are positive).
 - "scatter": Correlation between two numeric columns.
-- "table": Complex multi-dimensional data, text-heavy data, or when data is not suitable for 1D/2D charts.
-
+- "table": Text-heavy or multi-dimensional data that does not suit a chart.
+ 
+Summary rule: only state facts visible in the profile or the sample. If the sample is
+partial, do not make claims about rows you cannot see.
+ 
 Return ONLY valid JSON.
 """
-    res = llm.invoke([HumanMessage(content=prompt)])
-    
-    txt = parse_text(res.content).strip()
-    txt = re.sub(r"^```(?:json)?\s*", "", txt, flags=re.IGNORECASE)
-    txt = re.sub(r"\s*```$", "", txt)
-    usage = extract_usage(res)
-    
+ 
     llm_type = "table"
     llm_config = {}
-    summary = "Analysis completed."
-
+    summary = "Query executed and returned data."
+    usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+ 
     try:
+        llm = get_llm()
+        res = llm.invoke([HumanMessage(content=prompt)])
+        usage = extract_usage(res)
+ 
+        txt = parse_text(res.content).strip()
+        txt = re.sub(r"^```(?:json)?\s*", "", txt, flags=re.IGNORECASE)
+        txt = re.sub(r"\s*```$", "", txt)
+ 
         obj = json.loads(txt)
-        summary = obj.get("summary", "Analysis completed.")
+        summary = obj.get("summary", summary)
         llm_type = obj.get("chart_type", "table")
         llm_config = obj.get("chart_config", {})
-    except Exception:
-        summary = "Query executed and returned data."
-
+    except Exception as e:
+        print(f"Analyst step failed, falling back to table: {e}")
+ 
     final_type, final_config = validate_and_normalize_chart_config(
         df=df,
         llm_rec_type=llm_type,
         llm_config=llm_config,
-        question=state['question']
+        question=state["question"],
     )
-
+ 
     return {
         "analyst_summary": summary,
         "chart_type": final_type,
         "chart_config": final_config,
-        **add_usage(state, usage)
+        **add_usage(state, usage),
     }

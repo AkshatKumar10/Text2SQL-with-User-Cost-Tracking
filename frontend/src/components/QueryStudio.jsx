@@ -381,14 +381,46 @@ export function QueryStudio({
                             </div>
                         ) : (
                             <>
-                                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                                    <Stat icon={Rows3} label="Rows" value={rowCount} />
-                                    <Stat icon={Columns3} label="Columns" value={colCount} />
-                                    <Stat icon={Clock} label="Latency" value={latency} />
-                                    <Stat icon={RefreshCw} label="SQL Repairs" value={retryCount} />
-                                </div>
+                                {!isValid && (
+                                    <div className="rounded-2xl border border-rose-500/20 bg-rose-500/[0.06] p-5 text-rose-200">
+                                        <div className="flex items-start gap-3">
+                                            <AlertCircle className="mt-0.5 h-5 w-5 text-rose-400 shrink-0" />
+                                            <div>
+                                                <h4 className="font-semibold text-rose-300">SQL Execution Failed</h4>
+                                                <p className="mt-1 text-xs leading-relaxed text-rose-300/90 font-mono">
+                                                    {currentResult.error_message || "The query failed validation or execution on the database."}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                                {isValid && (
+                                    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                                        <Stat
+                                            icon={Rows3}
+                                            label="Rows returned"
+                                            value={rowCount}
+                                        />
+                                        <Stat
+                                            icon={Columns3}
+                                            label="Columns"
+                                            value={colCount}
+                                        />
+                                        <Stat
+                                            icon={Clock}
+                                            label="Latency"
+                                            value={latency}
+                                        />
+                                        <Stat
+                                            icon={RefreshCw}
+                                            label="Retries"
+                                            value={retryCount}
+                                        />
+                                    </div>
+                                )}
 
-                                <div className="overflow-hidden rounded-2xl border border-white/[0.08] bg-[#101216]">
+                                {isValid && (
+                                    <div className="overflow-hidden rounded-2xl border border-white/[0.08] bg-[#101216]">
                                     <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-3 sm:px-6">
                                         <div className="flex items-center gap-1 rounded-lg bg-white/[0.03] p-1">
                                             {tabs.map((t) => {
@@ -453,6 +485,7 @@ export function QueryStudio({
                                         )}
                                     </div>
                                 </div>
+                                )}
                             </>
                         )}
                     </div>
