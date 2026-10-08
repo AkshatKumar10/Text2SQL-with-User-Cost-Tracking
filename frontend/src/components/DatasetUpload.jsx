@@ -13,7 +13,7 @@ import {
   ShieldCheck,
   Layers,
 } from 'lucide-react';
-import axios from 'axios';
+import api from '../api/axiosClient';
 
 export function DatasetUpload({
   onClose,
@@ -98,15 +98,11 @@ export function DatasetUpload({
     }
 
     try {
-      const response = await axios.post(
-        '/api/upload',
-        formData,
-        {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-        }
-      );
+      const response = await api.post('/api/upload', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
       const data = response.data;
       setUploadStatus({
         success: true,

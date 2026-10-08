@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import axios from 'axios';
+import api from '../api/axiosClient';
 import {
   Play,
   Terminal,
@@ -90,10 +90,13 @@ export function SqlPlayground({ defaultQuery = DEFAULT_QUERY }) {
   const loadSchema = async () => {
     try {
       setLoadingSchema(true);
-      const response = await axios.get('/api/schema');
+      const response = await api.get('/api/schema');
       setTables(response.data?.tables || []);
     } catch (err) {
-      console.error('Failed to load schema:', err);
+      console.error(
+        'Failed to load schema:',
+        err?.response?.data?.detail || err?.message || err
+      );
       setTables([]);
     } finally {
       setLoadingSchema(false);
@@ -117,10 +120,14 @@ export function SqlPlayground({ defaultQuery = DEFAULT_QUERY }) {
     setError(null);
 
     try {
-      const { data } = await axios.post('/api/execute-sql', { sql: query });
+      const { data } = await api.post('/api/execute-sql', { sql: query });
       setResult(data);
     } catch (err) {
-      setError(err.message || 'SQL execution failed.');
+      setError(
+        err?.response?.data?.detail ||
+        err?.message ||
+        'SQL execution failed.'
+      );
       setResult(null);
     } finally {
       setExecuting(false);

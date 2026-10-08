@@ -2,9 +2,34 @@ import sqlite3
 import pandas as pd
 import os
 import re
+from typing import Optional, Dict, Any, List
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "ecommerce.db")
 APP_DB_PATH = os.path.join(os.path.dirname(__file__), "app.db")
+USER_DBS_DIR = os.path.join(os.path.dirname(__file__), "user_dbs")
+
+PROTECTED_TABLES = {"customers", "products", "orders", "order_items"}
+
+os.makedirs(USER_DBS_DIR, exist_ok=True)
+
+def get_user_db_path(user_id: Optional[int]) -> Optional[str]:
+    if not user_id:
+        return None
+    return os.path.join(USER_DBS_DIR, f"user_{user_id}.db")
+
+def clean_ecommerce_db():
+    """Removes any user-uploaded tables from ecommerce.db so it strictly contains built-in sample tables."""
+    if not os.path.exists(DB_PATH):
+        return
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
+    tables = [r[0] for r in cur.fetchall()]
+    for tbl in tables:
+        if tbl not in PROTECTED_TABLES:
+            cur.execute(f'DROP TABLE IF EXISTS "{tbl}"')
+    conn.commit()
+    conn.close()
 
 def init_db():
     """Initializes the e-commerce database."""
@@ -109,6 +134,7 @@ def init_db():
 
     conn.commit()
     conn.close()
+    clean_ecommerce_db()
 
 def ensure_meta_tables():
     """Initializes the user database."""
@@ -171,12 +197,17 @@ def format_datetime(value):
     except Exception:
         return value
 
-def import_df(df: pd.DataFrame, tbl_name: str) -> dict:
-    """Imports a pandas DataFrame as a table in ecommerce.db."""
-    if not os.path.exists(DB_PATH):
-        init_db()
+def import_df(df: pd.DataFrame, tbl_name: str, user_id: int) -> dict:
+    """Imports a pandas DataFrame into user_{user_id}.db dedicated database."""
+    if not user_id:
+        raise ValueError("Authentication required to upload dataset.")
 
     tbl = clean_table(tbl_name)
+    if tbl in PROTECTED_TABLES:
+        raise ValueError(
+            f"Table name '{tbl}' is reserved for sample business tables. Please choose a different name."
+        )
+
     new_cols = []
     seen = {}
     for c in df.columns:
@@ -189,7 +220,8 @@ def import_df(df: pd.DataFrame, tbl_name: str) -> dict:
             new_cols.append(sc)
     df.columns = new_cols
 
-    conn = sqlite3.connect(DB_PATH)
+    user_db_path = get_user_db_path(user_id)
+    conn = sqlite3.connect(user_db_path)
     cur = conn.cursor()
 
     cur.execute(
@@ -201,7 +233,7 @@ def import_df(df: pd.DataFrame, tbl_name: str) -> dict:
     if existing:
         conn.close()
         raise ValueError(
-            f"Table '{tbl}' already exists. Please enter a new name in the 'SQL Table Name' field and try again."
+            f"Table '{tbl}' already exists in your datasets. Please enter a new name."
         )
 
     df.to_sql(tbl, conn, if_exists="fail", index=False)
@@ -280,20 +312,21 @@ def log_user_query(user_id: int, user_email: str, question: str, sql_query: str,
     conn.close()
     return qid
 
-def delete_table(table_name: str) -> bool:
-    """Deletes a user-created table from ecommerce.db."""
-    protected = {
-        "customers",
-        "products",
-        "orders",
-        "order_items",
-    }
-
-    if table_name in protected:
+def delete_table(table_name: str, user_id: int) -> bool:
+    """Deletes a user-created table from user_{user_id}.db."""
+    if table_name in PROTECTED_TABLES:
         raise ValueError(
             f"Table '{table_name}' is a built-in sample table and cannot be deleted."
         )
-    conn = sqlite3.connect(DB_PATH)
+
+    if not user_id:
+        return False
+
+    user_db_path = get_user_db_path(user_id)
+    if not os.path.exists(user_db_path):
+        return False
+
+    conn = sqlite3.connect(user_db_path)
     cur = conn.cursor()
     cur.execute(
         """
@@ -367,36 +400,124 @@ def get_user_dashboard_stats(user_id: int) -> dict:
         "recent_queries": recent_queries
     }
 
-def get_schema() -> str:
-    """Extracts schema and sample data strictly from ecommerce.db."""
+def get_schema(user_id: Optional[int] = None) -> str:
+    """Extracts schema and sample data strictly from ecommerce.db + user's isolated db."""
     if not os.path.exists(DB_PATH):
         init_db()
     
+    parts = []
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    
     cur.execute("""
     SELECT name, sql
     FROM sqlite_master
     WHERE type = 'table'
       AND name NOT LIKE 'sqlite_%'
-      AND name NOT IN ('app_users', 'user_queries');
+      AND name IN ('customers', 'products', 'orders', 'order_items');
 """)
 
-    tables = cur.fetchall()
-    
-    parts = []
-    for tbl, ddl in tables:
+    base_tables = cur.fetchall()
+    for tbl, ddl in base_tables:
         sample_df = pd.read_sql_query(f"SELECT * FROM `{tbl}` LIMIT 2;", conn)
         sample = sample_df.to_string(index=False)
         parts.append(f"Table: {tbl}\nSchema:\n{ddl}\nSample Data:\n{sample}\n")
-        
     conn.close()
+
+    if user_id:
+        user_db_path = get_user_db_path(user_id)
+        if os.path.exists(user_db_path):
+            u_conn = sqlite3.connect(user_db_path)
+            u_cur = u_conn.cursor()
+            u_cur.execute("""
+                SELECT name, sql FROM sqlite_master
+                WHERE type = 'table' AND name NOT LIKE 'sqlite_%';
+            """)
+            u_tables = u_cur.fetchall()
+            for tbl, ddl in u_tables:
+                sample_df = pd.read_sql_query(f"SELECT * FROM `{tbl}` LIMIT 2;", u_conn)
+                sample = sample_df.to_string(index=False)
+                parts.append(f"Table (User Custom): {tbl}\nSchema:\n{ddl}\nSample Data:\n{sample}\n")
+            u_conn.close()
+
     return "\n".join(parts)
 
-def run_sql(sql: str) -> pd.DataFrame:
-    """Executes SQL query against ecommerce.db and returns DataFrame."""
+def get_schema_details(user_id: Optional[int] = None) -> dict:
+    """Fetches structured table metadata for API consumers."""
+    if not os.path.exists(DB_PATH):
+        init_db()
+
+    raw = get_schema(user_id)
+    tables = []
+    
     conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT name, sql FROM sqlite_master
+        WHERE type = 'table'
+          AND name NOT LIKE 'sqlite_%'
+          AND name IN ('customers', 'products', 'orders', 'order_items');
+    """)
+    base_meta = cur.fetchall()
+    for tbl, ddl in base_meta:
+        cur.execute(f"PRAGMA table_info(`{tbl}`);")
+        cols = [{"cid": r[0], "name": r[1], "type": r[2], "notnull": bool(r[3]), "pk": bool(r[5])} for r in cur.fetchall()]
+        df = pd.read_sql_query(f"SELECT * FROM `{tbl}` LIMIT 5;", conn)
+        df = df.astype(object).where(pd.notna(df), None)
+        rows = df.to_dict(orient="records")
+        cur.execute(f"SELECT count(*) FROM `{tbl}`")
+        count = cur.fetchone()[0]
+        tables.append({
+            "name": tbl,
+            "ddl": ddl,
+            "columns": cols,
+            "sample_rows": rows,
+            "total_rows": count,
+            "is_custom": False
+        })
+    conn.close()
+
+    if user_id:
+        user_db_path = get_user_db_path(user_id)
+        if os.path.exists(user_db_path):
+            u_conn = sqlite3.connect(user_db_path)
+            u_cur = u_conn.cursor()
+            u_cur.execute("""
+                SELECT name, sql FROM sqlite_master
+                WHERE type = 'table' AND name NOT LIKE 'sqlite_%';
+            """)
+            u_meta = u_cur.fetchall()
+            for tbl, ddl in u_meta:
+                u_cur.execute(f"PRAGMA table_info(`{tbl}`);")
+                cols = [{"cid": r[0], "name": r[1], "type": r[2], "notnull": bool(r[3]), "pk": bool(r[5])} for r in u_cur.fetchall()]
+                df = pd.read_sql_query(f"SELECT * FROM `{tbl}` LIMIT 5;", u_conn)
+                df = df.astype(object).where(pd.notna(df), None)
+                rows = df.to_dict(orient="records")
+                u_cur.execute(f"SELECT count(*) FROM `{tbl}`")
+                count = u_cur.fetchone()[0]
+                tables.append({
+                    "name": tbl,
+                    "ddl": ddl,
+                    "columns": cols,
+                    "sample_rows": rows,
+                    "total_rows": count,
+                    "is_custom": True
+                })
+            u_conn.close()
+
+    return {
+        "raw_schema": raw,
+        "tables": tables
+    }
+
+def run_sql(sql: str, user_id: Optional[int] = None) -> pd.DataFrame:
+    """Executes SQL query against ecommerce.db attached with user's isolated db."""
+    conn = sqlite3.connect(DB_PATH)
+    if user_id:
+        user_db_path = get_user_db_path(user_id)
+        if os.path.exists(user_db_path):
+            conn.execute(f"ATTACH DATABASE '{user_db_path}' AS udb;")
     df = pd.read_sql_query(sql, conn)
     conn.close()
     return df
+
+clean_ecommerce_db()

@@ -1,7 +1,19 @@
 import React, { useState } from 'react';
-import { Check, Wrench, X, Minus, ChevronDown, Code2, RotateCcw } from 'lucide-react';
+import { Check, Wrench, X, Minus, ChevronDown, Code2, RotateCcw, Loader2 } from 'lucide-react';
 
 const tones = {
+  running: {
+    icon: Loader2,
+    text: 'Running',
+    circle: 'border-blue-400/50 bg-blue-500/10 text-blue-400 animate-spin',
+    label: 'text-blue-400/90 font-medium',
+  },
+  pending: {
+    icon: Minus,
+    text: 'Pending',
+    circle: 'border-white/[0.08] bg-white/[0.02] text-slate-600',
+    label: 'text-slate-600',
+  },
   done: {
     icon: Check,
     text: 'Done',
@@ -35,6 +47,7 @@ export function AgentWorkflowTracker({
   error,
   isAnswerable = true, 
   answerabilityReason,
+  isLoading = false,
 }) {
   const [expanded, setExpanded] = useState({});
   const toggle = (idx) => setExpanded((prev) => ({ ...prev, [idx]: !prev[idx] }));
@@ -42,7 +55,14 @@ export function AgentWorkflowTracker({
   const answerable = isAnswerable !== false;
   const checkStatus = !isValid ? 'failed' : retryCount > 0 ? 'fixed' : 'done';
 
-  const steps = answerable
+  const steps = isLoading
+    ? [
+        { name: 'Check question', status: 'running', text: 'Analyzing...' },
+        { name: 'Write SQL', status: 'pending', text: 'Waiting...' },
+        { name: 'Check SQL', status: 'pending', text: 'Waiting...' },
+        { name: 'Show results', status: 'pending', text: 'Waiting...' },
+      ]
+    : answerable
     ? [
         { name: 'Check question', status: 'done' },
         { name: 'Write SQL', status: 'done' },

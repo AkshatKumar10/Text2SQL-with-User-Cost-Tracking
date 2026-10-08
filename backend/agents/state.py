@@ -2,6 +2,7 @@ from typing import TypedDict, Optional, List, Dict, Any
 import pandas as pd
 
 class AgentState(TypedDict):
+    user_id: Optional[int]
     question: str
     schema: str
     is_answerable: bool

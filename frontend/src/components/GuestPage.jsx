@@ -15,7 +15,6 @@ import {
     RefreshCw,
     ShoppingBag,
 } from 'lucide-react';
-import { GoogleLogin } from '@react-oauth/google';
 
 import { AgentWorkflowTracker } from './AgentWorkflowTracker';
 import { VisualizerCard } from './VisualizerCard';
@@ -58,11 +57,7 @@ export function GuestPage({
     activeResultTab,
     setActiveResultTab,
     onSubmit,
-    user,
     starters,
-    onGoogleSuccess,
-    onGoogleError,
-    googleClientId,
     schemaData,
 }) {
     const [selectedTable, setSelectedTable] = useState(null);
@@ -79,7 +74,7 @@ export function GuestPage({
         }
     }, [currentResult, setActiveResultTab]);
 
-        const rowCount = currentResult?.row_count ?? currentResult?.df_result?.length ?? 0;
+    const rowCount = currentResult?.row_count ?? currentResult?.df_result?.length ?? 0;
     const colCount = currentResult?.columns?.length ?? 0;
 
     const latency =
@@ -143,22 +138,6 @@ export function GuestPage({
                     <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-amber-400/20 bg-amber-400/[0.06] px-3 py-1.5 text-xs text-amber-200/90">
                         <Info className="h-3.5 w-3.5 text-amber-300" />
                         Guest sandbox. Queries here aren't saved or tracked.
-                        {!user && googleClientId && (
-                            <span className="group relative inline-flex cursor-pointer overflow-hidden">
-                                <span className="pointer-events-none font-semibold text-white underline decoration-white/30 underline-offset-2 transition group-hover:decoration-white">
-                                    Sign in
-                                </span>
-                                <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 scale-[2] opacity-0">
-                                    <GoogleLogin
-                                        onSuccess={onGoogleSuccess}
-                                        onError={onGoogleError}
-                                        type="icon"
-                                        shape="square"
-                                        size="large"
-                                    />
-                                </span>
-                            </span>
-                        )}
                     </div>
                     <h1 className="mx-auto mt-6 max-w-2xl text-4xl font-semibold leading-[1.08] tracking-[-0.04em] text-white sm:text-5xl">
                         What would you like to know?
@@ -252,6 +231,7 @@ export function GuestPage({
                         <button
                             key={item.title}
                             onClick={() => {
+                                setCurrentResult(null);
                                 setQuestion(item.query);
                                 onSubmit(item.query);
                             }}
@@ -289,14 +269,8 @@ export function GuestPage({
                 )}
 
                 {loading && (
-                    <div
-                        className="mt-12 space-y-4"
-                        aria-busy="true"
-                        aria-label="Running database query"
-                    >
-                        <div className="h-16 animate-pulse rounded-xl border border-white/[0.06] bg-white/[0.02]" />
-
-                        <div className="h-72 animate-pulse rounded-2xl border border-white/[0.06] bg-white/[0.02]" />
+                    <div className="mt-12 space-y-5">
+                        <AgentWorkflowTracker isLoading={true} />
                     </div>
                 )}
 
@@ -323,11 +297,10 @@ export function GuestPage({
                             <>
                                 <div className="flex items-center gap-2.5">
                                     <span
-                                        className={`h-2 w-2 rounded-full ${
-                                            isValid
-                                                ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.7)]'
-                                                : 'bg-rose-400 shadow-[0_0_10px_rgba(244,63,94,0.7)]'
-                                        }`}
+                                        className={`h-2 w-2 rounded-full ${isValid
+                                            ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.7)]'
+                                            : 'bg-rose-400 shadow-[0_0_10px_rgba(244,63,94,0.7)]'
+                                            }`}
                                     />
                                     <h2 className="text-lg font-semibold tracking-[-0.02em] text-white">
                                         {isValid
@@ -397,17 +370,15 @@ export function GuestPage({
                                                                         id
                                                                     )
                                                                 }
-                                                                className={`flex cursor-pointer items-center gap-2 rounded-md px-3.5 py-1.5 text-xs font-medium transition ${
-                                                                    active
-                                                                        ? 'bg-white/[0.09] text-white'                                                                      : 'text-[#7b818a] hover:text-slate-200'
-                                                                }`}
+                                                                className={`flex cursor-pointer items-center gap-2 rounded-md px-3.5 py-1.5 text-xs font-medium transition ${active
+                                                                    ? 'bg-white/[0.09] text-white' : 'text-[#7b818a] hover:text-slate-200'
+                                                                    }`}
                                                             >
                                                                 <Icon
-                                                                    className={`h-3.5 w-3.5 ${
-                                                                        active
-                                                                            ? 'text-blue-400'
-                                                                            : ''
-                                                                    }`}
+                                                                    className={`h-3.5 w-3.5 ${active
+                                                                        ? 'text-blue-400'
+                                                                        : ''
+                                                                        }`}
                                                                 />
 
                                                                 {label}
@@ -421,13 +392,13 @@ export function GuestPage({
                                         <div className="p-4 sm:p-6">
                                             {activeResultTab ===
                                                 'viz' && (
-                                                <VisualizerCard
-                                                    chartType={currentResult.chart_type}
-                                                    chartConfig={currentResult.chart_config}
-                                                    summary={currentResult.analyst_summary}
-                                                    data={currentResult.df_result}
-                                                />
-                                            )}
+                                                    <VisualizerCard
+                                                        chartType={currentResult.chart_type}
+                                                        chartConfig={currentResult.chart_config}
+                                                        summary={currentResult.analyst_summary}
+                                                        data={currentResult.df_result}
+                                                    />
+                                                )}
                                             {activeResultTab ===
                                                 'data' &&
                                                 (hasRows ? (
@@ -453,11 +424,11 @@ export function GuestPage({
                                                 ))}
                                             {activeResultTab ===
                                                 'sql' && (
-                                                <SqlCodeBlock
-                                                    code={currentResult.sql_query}
-                                                    repairHistory={repairHistory}
-                                                />
-                                            )}
+                                                    <SqlCodeBlock
+                                                        code={currentResult.sql_query}
+                                                        repairHistory={repairHistory}
+                                                    />
+                                                )}
                                         </div>
                                     </div>
                                 )}

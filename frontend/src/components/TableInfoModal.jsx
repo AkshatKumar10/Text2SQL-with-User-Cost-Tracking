@@ -17,7 +17,7 @@ export function TableInfoModal({
 
         document.body.style.overflow = 'hidden';
 
-        if (scrollbarWidth > 0) {
+        if (scrollbar > 0) {
             document.body.style.paddingRight = `${scrollbar}px`;
         }
         return () => {

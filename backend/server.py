@@ -5,7 +5,7 @@ import re
 import sqlite3
 import uvicorn
 from typing import Optional, List, Dict, Any
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import pandas as pd
@@ -15,7 +15,7 @@ import jwt
 import requests
 from database import (
     get_schema, init_db, run_sql, DB_PATH, APP_DB_PATH, import_df, clean_table,
-    ensure_meta_tables, get_or_create_user, get_user_by_id, log_user_query, get_user_dashboard_stats,delete_table
+    ensure_meta_tables, get_or_create_user, get_user_by_id, log_user_query, get_user_dashboard_stats, delete_table, get_schema_details
 )
 from agents.workflow import build_workflow
 from langfuse.langchain import CallbackHandler
@@ -35,6 +35,48 @@ app.add_middleware(
 
 JWT_SECRET = os.getenv("JWT_SECRET", "text2sql_user_cost_tracking_secret_2026")
 JWT_ALGORITHM = "HS256"
+
+def decode_session_token(token: str) -> Dict[str, Any]:
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = payload.get("user_id")
+
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid authentication token")
+
+        user = get_user_by_id(user_id)
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+
+        return user
+
+    except HTTPException:
+        raise
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Authentication token has expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid authentication token")
+
+def require_auth(
+    authorization: Optional[str] = Header(None),
+    token: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Authenticate protected API requests.
+    Preferred:
+        Authorization: Bearer <JWT>
+    """
+    raw_token = None
+
+    if authorization and authorization.startswith("Bearer "):
+        raw_token = authorization[7:].strip()
+    elif token:
+        raw_token = token.strip()
+
+    if not raw_token:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    return decode_session_token(raw_token)
 
 def get_langfuse_client():
     sk = os.getenv("LANGFUSE_SECRET_KEY")
@@ -59,6 +101,7 @@ class SqlReq(BaseModel):
 class GoogleAuthReq(BaseModel):
     credential: Optional[str] = None
     id_token: Optional[str] = None
+    access_token: Optional[str] = None
 
 class DeleteTableReq(BaseModel):
     table_name: str
@@ -78,16 +121,24 @@ def health():
 
 @app.post("/api/auth/google")
 def google_auth(req: GoogleAuthReq):
-    token_val = req.credential
+    print(req)
+    token_val = req.credential or req.id_token or req.access_token
     if not token_val:
         raise HTTPException(status_code=400, detail="Missing Google token")
 
     decoded = None
     try:
-        resp = requests.get(
-            f"https://oauth2.googleapis.com/tokeninfo?id_token={token_val}",
-            timeout=5
-        )
+        if req.access_token and not (req.credential or req.id_token):
+            resp = requests.get(
+                "https://www.googleapis.com/oauth2/v3/userinfo",
+                headers={"Authorization": f"Bearer {token_val}"},
+                timeout=5
+            )
+        else:
+            resp = requests.get(
+                f"https://oauth2.googleapis.com/tokeninfo?id_token={token_val}",
+                timeout=5
+            )
 
         if resp.status_code != 200:
             raise HTTPException(
@@ -129,70 +180,42 @@ def google_auth(req: GoogleAuthReq):
     }
 
 @app.get("/api/auth/me")
-def get_current_user(token: Optional[str] = None):
-    if not token:
-        raise HTTPException(status_code=401, detail="Missing authentication token")
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        user = get_user_by_id(payload["user_id"])
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        return {"status": "success", "user": user}
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+def get_current_user(current_user: Dict[str, Any] = Depends(require_auth)):
+    return {"status": "success", "user": current_user}
 
 @app.get("/api/user/dashboard")
-def get_user_dashboard(user_id: int):
+def get_user_dashboard(current_user: Dict[str, Any] = Depends(require_auth)):
+    user_id = current_user["id"]
     stats = get_user_dashboard_stats(user_id)
     if not stats:
         raise HTTPException(status_code=404, detail="User dashboard data not found")
     return {"status": "success", **stats}
 
 @app.get("/api/schema")
-def fetch_schema():
-    raw = get_schema()
-    
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("""
-    SELECT name, sql
-    FROM sqlite_master
-    WHERE type = 'table'
-      AND name NOT LIKE 'sqlite_%'
-      AND name NOT IN ('app_users', 'user_queries');
-""")
+def fetch_schema(
+    authorization: Optional[str] = Header(None),
+    token: Optional[str] = None
+):
+    user_id = None
+    auth_token = None
+    if authorization and authorization.startswith("Bearer "):
+        auth_token = authorization.split(" ")[1]
+    elif token:
+        auth_token = token
 
-    meta = cur.fetchall()
-    
-    tables = []
-    for tbl, ddl in meta:
-        cur.execute(f"PRAGMA table_info(`{tbl}`);")
-        cols = [{"cid": r[0], "name": r[1], "type": r[2], "notnull": bool(r[3]), "pk": bool(r[5])} for r in cur.fetchall()]
-        
-        df = pd.read_sql_query(f"SELECT * FROM `{tbl}` LIMIT 5;", conn)
-        df = df.astype(object).where(pd.notna(df), None)
-        rows = df.to_dict(orient="records")
-        
-        cur.execute(f"SELECT count(*) FROM `{tbl}`")
-        count = cur.fetchone()[0]
-        
-        tables.append({
-            "name": tbl,
-            "ddl": ddl,
-            "columns": cols,
-            "sample_rows": rows,
-            "total_rows": count
-        })
-    conn.close()
-    
-    return {
-        "raw_schema": raw,
-        "tables": tables
-    }
+    if auth_token:
+        try:
+            payload = jwt.decode(auth_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            user_id = payload.get("user_id")
+        except Exception:
+            user_id = None
+
+    return get_schema_details(user_id=user_id)
 
 @app.post("/api/upload")
 async def upload(
     file: UploadFile = File(...),
+    current_user: Dict[str, Any] = Depends(require_auth),
     custom_table_name: Optional[str] = Form(None)
 ):
     fname = file.filename or "dataset.csv"
@@ -226,7 +249,7 @@ async def upload(
         tbl = clean_table(raw_name)
 
         try:
-            res = import_df(df, tbl)
+            res = import_df(df, tbl, user_id=current_user["id"])
 
             return {
                 "status": "success",
@@ -247,9 +270,12 @@ async def upload(
         raise HTTPException(status_code=500, detail=f"File process error: {str(e)}")
 
 @app.delete("/api/table")
-def delete_table_endpoint(req: DeleteTableReq):
+def delete_table_endpoint(
+    req: DeleteTableReq,
+    current_user: Dict[str, Any] = Depends(require_auth),
+):
     try:
-        deleted = delete_table(req.table_name)
+        deleted = delete_table(req.table_name, user_id=current_user["id"])
 
         if not deleted:
             raise HTTPException(
@@ -279,7 +305,10 @@ def delete_table_endpoint(req: DeleteTableReq):
         )
         
 @app.post("/api/execute-sql")
-def exec_sql(req: SqlReq):
+def exec_sql(
+    req: SqlReq,
+    current_user: Dict[str, Any] = Depends(require_auth),
+):
     sql = req.sql.strip()
 
     if not sql:
@@ -304,7 +333,7 @@ def exec_sql(req: SqlReq):
         )
 
     try:
-        df = run_sql(sql)
+        df = run_sql(sql, user_id=current_user["id"])
         df = df.astype(object).where(
             pd.notna(df),
             None
@@ -325,14 +354,30 @@ def exec_sql(req: SqlReq):
         )
 
 @app.post("/api/query")
-def run_query(req: QueryReq):
+def run_query(
+    req: QueryReq,
+    authorization: Optional[str] = Header(None),
+    token: Optional[str] = None,
+):
+    current_user = None
+
+    if not req.guest_mode:
+        current_user = require_auth(
+            authorization=authorization,
+            token=token,
+        )
+        req.user_id = current_user["id"]
+    else:
+        req.user_id = None
+
     if not os.getenv("GROQ_API_KEY"):
         raise HTTPException(status_code=400, detail="GROQ_API_KEY missing in .env")
         
-    schema_txt = get_schema()
+    schema_txt = get_schema(user_id=req.user_id)
     flow = build_workflow()
     
     init_state = {
+        "user_id": req.user_id,
         "question": req.question.strip(),
         "schema": schema_txt,
         "is_answerable": False,
@@ -376,9 +421,9 @@ def run_query(req: QueryReq):
         p_tokens = res.get("prompt_tokens", 0)
         c_tokens = res.get("completion_tokens", 0)
         total_t = res.get("total_tokens", 0)
-        
-        INPUT_PRICE_PER_1K = 0.00075    # $0.75 per 1M input tokens
-        OUTPUT_PRICE_PER_1K = 0.00375   # $3.75 per 1M output tokens
+
+        INPUT_PRICE_PER_1K = 0.00003   # $0.03 per 1M input tokens
+        OUTPUT_PRICE_PER_1K = 0.00017  # $0.17 per 1M output tokens
 
         cost_usd = round(
             (p_tokens / 1000) * INPUT_PRICE_PER_1K +

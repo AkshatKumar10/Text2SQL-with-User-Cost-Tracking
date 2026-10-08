@@ -256,7 +256,7 @@ def val_node(state: AgentState) -> Dict[str, Any]:
     normalized = normalized.rstrip(";").strip()
 
     if not (
-        normalized.startswith("SELECT")
+        normalized.startswith("SELECT ")
         or normalized.startswith("WITH")
     ):
         return {
@@ -350,7 +350,7 @@ def repair_node(state: AgentState) -> Dict[str, Any]:
 # SQL Execution Node
 def exec_node(state: AgentState) -> Dict[str, Any]:
     try:
-        df = run_sql(state["sql_query"])
+        df = run_sql(state["sql_query"], user_id=state.get("user_id"))
         row_count = len(df)
         return {
             "df_result": df.to_dict(orient="records"),
