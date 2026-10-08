@@ -256,7 +256,7 @@ def val_node(state: AgentState) -> Dict[str, Any]:
     normalized = normalized.rstrip(";").strip()
 
     if not (
-        normalized.startswith("SELECT ")
+        normalized.startswith("SELECT")
         or normalized.startswith("WITH")
     ):
         return {
