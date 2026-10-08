@@ -166,7 +166,7 @@ export function DataTable({ data, columns }) {
                         className="py-3 px-4 text-slate-300 whitespace-nowrap"
                       >
                         {row[col] !== null &&
-                        row[col] !== undefined ? (
+                          row[col] !== undefined ? (
                           typeof row[col] === 'object' ? (
                             JSON.stringify(row[col])
                           ) : (
@@ -186,20 +186,40 @@ export function DataTable({ data, columns }) {
           </div>
 
           {totalPages > 1 && (
-            <div className="px-4 py-2.5 bg-slate-950/60 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
-              <div>
-                Page {safePage + 1} of {totalPages}
-              </div>
-              <div className="flex gap-2">
+            <div className="flex items-center justify-between border-t border-slate-800/70 py-2 px-4">
+              <p className="text-xs text-slate-500">
+                Showing{' '}
+                <span className="font-medium text-slate-300">
+                  {safePage * rowsPerPage + 1}
+                </span>
+                {' - '}
+                <span className="font-medium text-slate-300">
+                  {Math.min(
+                    (safePage + 1) * rowsPerPage,
+                    filteredData.length
+                  )}
+                </span>
+                {' of '}
+                <span className="font-medium text-slate-300">
+                  {filteredData.length}
+                </span>
+              </p>
+
+              <div className="flex items-center gap-1.5">
                 <button
                   onClick={() =>
                     setPage((p) => Math.max(0, p - 1))
                   }
                   disabled={safePage === 0}
-                  className="cursor-pointer px-2.5 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed rounded text-slate-300 transition"
+                  className="flex h-8 items-center justify-center rounded-lg border border-slate-800 bg-slate-950/40 px-3 text-xs font-medium text-slate-400 transition-all hover:border-slate-700 hover:bg-slate-800/50 hover:text-slate-200 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  Prev
+                  Previous
                 </button>
+
+                <div className="flex h-8 min-w-8 items-center justify-center rounded-lg border border-blue-500/20 bg-blue-500/[0.08] px-2 text-xs font-semibold text-blue-300">
+                  {safePage + 1}
+                </div>
+
                 <button
                   onClick={() =>
                     setPage((p) =>
@@ -207,7 +227,7 @@ export function DataTable({ data, columns }) {
                     )
                   }
                   disabled={safePage >= totalPages - 1}
-                  className="cursor-pointer px-2.5 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed rounded text-slate-300 transition"
+                  className="flex h-8 items-center justify-center rounded-lg border border-slate-800 bg-slate-950/40 px-3 text-xs font-medium text-slate-400 transition-all hover:border-slate-700 hover:bg-slate-800/50 hover:text-slate-200 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Next
                 </button>

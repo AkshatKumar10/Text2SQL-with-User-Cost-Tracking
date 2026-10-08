@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
     Sparkles,
     ArrowUp,
@@ -59,10 +59,13 @@ export function QueryStudio({
     schemaData,
 }) {
     const navigate = useNavigate();
+    const location = useLocation();
     const [selectedTable, setSelectedTable] = useState(null);
 
     useEffect(() => {
-        setQuestion('');
+        if (!location.state?.fromHistory) {
+            setQuestion('');
+        }
         setCurrentResult(null);
         setActiveResultTab('sql');
     }, []);
@@ -112,6 +115,7 @@ export function QueryStudio({
 
     const run = () => {
         if (!loading && question.trim()) {
+            setCurrentResult(null);
             onSubmit(question, false);
         }
     };

@@ -113,6 +113,7 @@ export function GuestPage({
 
     const run = () => {
         if (!loading && question.trim()) {
+            setCurrentResult(null);
             onSubmit(question);
         }
     };

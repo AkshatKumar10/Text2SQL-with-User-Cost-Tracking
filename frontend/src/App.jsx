@@ -15,6 +15,7 @@ import { SqlPlayground } from './components/SqlPlayground';
 import { DatasetUpload } from './components/DatasetUpload';
 import { GuestPage } from './components/GuestPage';
 import { QueryStudio } from './components/QueryStudio';
+import { QueryHistory } from './components/QueryHistory';
 import { ProtectedRoute } from './routes/ProtectedRoute';
 import api from './api/axiosClient';
 
@@ -28,6 +29,13 @@ export function App() {
   const [currentResult, setCurrentResult] = useState(null);
   const [error, setError] = useState(null);
   const [history, setHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyPagination, setHistoryPagination] = useState({
+    page: 1,
+    limit: 10,
+    total: 0,
+    total_pages: 0,
+  });
   const [schemaData, setSchemaData] = useState(null);
 
   const [user, setUser] = useState(null);
@@ -67,10 +75,82 @@ export function App() {
     fetchSchema();
     if (authToken) {
       verifyUserSession(authToken);
+      if (location.pathname === '/history') {
+        fetchUserHistory(1);
+      }
     } else {
       setUser(null);
+      setHistory([]);
     }
-  }, [authToken]);
+  }, [authToken, location.pathname]);
+
+  const fetchUserHistory = async (page = 1) => {
+    setHistoryLoading(true);
+    try {
+      const res = await api.get('/api/user/history', {
+        params: {
+          page,
+          limit: 10,
+        },
+      });
+      setHistory(res.data.history || []);
+      setHistoryPagination(
+        res.data.pagination || {
+          page,
+          limit: 10,
+          total: 0,
+          total_pages: 0,
+        }
+      );
+    } catch (err) {
+      console.warn('Failed to fetch user history:', err.message);
+      setHistory([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const handleClearHistory = async () => {
+    try {
+      await api.delete('/api/user/history');
+      setHistory([]);
+      setHistoryPagination({
+        page: 1,
+        limit: 10,
+        total: 0,
+        total_pages: 0,
+      });
+    } catch (err) {
+      console.error('Failed to clear history:', err.message);
+    }
+  };
+
+  const handlePage = (page) => {
+    if (
+      page < 1 ||
+      page > historyPagination.total_pages ||
+      page === historyPagination.page
+    ) {
+      return;
+    }
+
+    fetchUserHistory(page);
+  };
+
+  const handleSelectHistoryItem = (item) => {
+    setQuestion(item.question);
+    setCurrentResult(item);
+    if (item.chart_type === 'table' || item.chart_type === 'none') {
+      setActiveResultTab('data');
+    } else {
+      setActiveResultTab('viz');
+    }
+    navigate('/query', {
+      state: {
+        fromHistory: true,
+      },
+    });
+  };
 
   useEffect(() => {
     if (location.pathname === '/') {
@@ -230,7 +310,7 @@ export function App() {
         setActiveResultTab('viz');
       }
       if (!isGuestMode && user) {
-        setHistory((prev) => [data, ...prev]);
+        fetchUserHistory(1);
       }
     } catch (err) {
       setError(err.message);
@@ -372,6 +452,21 @@ export function App() {
                 <DatasetUpload
                   onClose={() => navigate('/query')}
                   onUploadSuccess={handleUploadSuccess}
+                />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/history"
+            element={
+              <ProtectedRoute>
+                <QueryHistory
+                  history={history}
+                  historyLoading={historyLoading}
+                  onSelectQuery={handleSelectHistoryItem}
+                  onClearHistory={handleClearHistory}
+                  pagination={historyPagination}
+                  onPageChange={handlePage}
                 />
               </ProtectedRoute>
             }

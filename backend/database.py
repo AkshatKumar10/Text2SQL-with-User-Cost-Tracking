@@ -348,8 +348,12 @@ def delete_table(table_name: str, user_id: int) -> bool:
     conn.close()
     return True
 
-def get_user_dashboard_stats(user_id: int) -> dict:
+def get_user_dashboard_stats(user_id: int, page: int = 1, limit: int = 10) -> dict:
     ensure_meta_tables()
+    page = max(page, 1)
+    limit = max(1, min(limit, 50))
+    offset = (page - 1) * limit
+
     conn = sqlite3.connect(APP_DB_PATH)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -361,12 +365,11 @@ def get_user_dashboard_stats(user_id: int) -> dict:
         return None
 
     user_data = dict(u_row)
-
     user_data["created_at"] = format_datetime(user_data["created_at"])
     user_data["last_login"] = format_datetime(user_data["last_login"])
 
     cur.execute("""
-        SELECT 
+        SELECT
             COUNT(*) as total_queries,
             SUM(total_tokens) as aggregate_tokens,
             SUM(prompt_tokens) as aggregate_prompt_tokens,
@@ -377,16 +380,49 @@ def get_user_dashboard_stats(user_id: int) -> dict:
         WHERE user_id = ?
     """, (user_id,))
     agg = dict(cur.fetchone())
-    
+
     cur.execute("""
-        SELECT * FROM user_queries 
-        WHERE user_id = ? 
-        ORDER BY id DESC 
-        LIMIT 50
+        SELECT COUNT(*)
+        FROM user_queries
+        WHERE user_id = ?
     """, (user_id,))
+    total = cur.fetchone()[0]
+    total_pages = (total + limit - 1) // limit
+
+    cur.execute("""
+        SELECT
+            id,
+            created_at,
+            total_tokens,
+            cost_usd,
+            latency_ms
+        FROM user_queries
+        WHERE user_id = ?
+        ORDER BY id ASC
+    """, (user_id,))
+
+    usage_chart = [
+        {
+            "id": row["id"],
+            "created_at": row["created_at"],
+            "total_tokens": row["total_tokens"] or 0,
+            "cost_usd": row["cost_usd"] or 0.0,
+            "latency_ms": row["latency_ms"] or 0,
+        }
+        for row in cur.fetchall()
+    ]
+
+    cur.execute("""
+        SELECT *
+        FROM user_queries
+        WHERE user_id = ?
+        ORDER BY id DESC
+        LIMIT ? OFFSET ?
+    """, (user_id, limit, offset))
     recent_queries = [dict(r) for r in cur.fetchall()]
 
     conn.close()
+
     return {
         "user": user_data,
         "summary": {
@@ -397,8 +433,70 @@ def get_user_dashboard_stats(user_id: int) -> dict:
             "aggregate_cost_usd": round(agg["aggregate_cost_usd"] or 0.0, 6),
             "avg_latency_ms": round(agg["avg_latency_ms"] or 0, 2)
         },
-        "recent_queries": recent_queries
+        "usage_chart": usage_chart,
+        "recent_queries": recent_queries,
+        "pagination": {
+            "page": page,
+            "limit": limit,
+            "total": total,
+            "total_pages": total_pages
+        }
     }
+
+def get_user_history(user_id: int, page: int = 1, limit: int = 10) -> dict:
+    ensure_meta_tables()
+    page = max(page, 1)
+    limit = max(1, min(limit, 10))
+    offset = (page - 1) * limit
+
+    conn = sqlite3.connect(APP_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        SELECT COUNT(*)
+        FROM user_queries
+        WHERE user_id = ?
+        """,
+        (user_id,)
+    )
+    total = cur.fetchone()[0]
+    total_pages = (total + limit - 1) // limit
+    cur.execute(
+        """
+        SELECT *
+        FROM user_queries
+        WHERE user_id = ?
+        ORDER BY id DESC
+        LIMIT ? OFFSET ?
+        """,
+        (user_id, limit, offset)
+    )
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+
+    for r in rows:
+        r["created_at"] = format_datetime(r.get("created_at"))
+
+    return {
+        "history": rows,
+        "pagination": {
+            "page": page,
+            "limit": limit,
+            "total": total,
+            "total_pages": total_pages
+        }
+    }
+
+def clear_user_history(user_id: int) -> bool:
+    ensure_meta_tables()
+    conn = sqlite3.connect(APP_DB_PATH)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM user_queries WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+    return True
 
 def get_schema(user_id: Optional[int] = None) -> str:
     """Extracts schema and sample data strictly from ecommerce.db + user's isolated db."""

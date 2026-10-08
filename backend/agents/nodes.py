@@ -8,6 +8,7 @@ from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from .state import AgentState
+from .visualization import profile_dataframe, validate_and_normalize_chart_config
 from database import DB_PATH, run_sql
 
 # def get_llm():
@@ -371,46 +372,51 @@ def exec_node(state: AgentState) -> Dict[str, Any]:
 def analyst_node(state: AgentState) -> Dict[str, Any]:
     llm = get_llm()
     recs = state.get("df_result", [])
-    cols = state.get("columns", [])
     
-    if not recs:
+    if not recs or len(recs) == 0:
         return {
             "analyst_summary": "The query executed successfully but returned 0 rows.",
             "chart_type": "none",
-            "chart_config": {}
+            "chart_config": {"title": "No Results Found", "reason": "Query returned 0 rows."}
         }
     
-    sample = json.dumps(recs[:10], indent=2)
-    
+    df = pd.DataFrame(recs)
+    profile = profile_dataframe(df)
+
     prompt = f"""You are a senior Business Intelligence Data Analyst and Visualization Specialist.
-Analyze the following query results and decide on the single best visualization.
+Analyze the query result statistics and recommend the single best visualization.
 
 User Question: {state['question']}
 SQL Query: {state['sql_query']}
-Columns: {cols}
-Result Sample (up to 10 rows):
-{sample}
 
-Provide your answer in strict JSON format matching this schema:
+Dataset Profile:
+- Total Row Count: {profile['row_count']}
+- Column Metadata & Statistics:
+{json.dumps(profile['profiles'], indent=2)}
+
+Representative Data Sample (up to 5 rows):
+{json.dumps(profile['sample'], indent=2)}
+
+Provide your recommendation in strict JSON format matching this schema:
 {{
   "summary": "2-3 sentence concise business summary of what the data shows",
   "chart_type": "bar | line | pie | scatter | kpi | table",
   "chart_config": {{
-    "title": "Chart Title",
-    "x": "column_for_x_axis",
-    "y": "column_for_y_axis",
-    "color": "optional_column_for_hue",
-    "kpi_value_column": "optional_column_for_single_metric"
+    "title": "Descriptive Chart Title",
+    "x": "exact_column_name_for_x_axis",
+    "y": "exact_column_name_for_y_axis",
+    "color": "optional_exact_column_for_hue",
+    "kpi_value_column": "optional_exact_column_for_single_metric"
   }}
 }}
 
-Chart selection guidelines:
-- If categorical vs numerical metric (e.g. Sales by Category, Top Customers): "bar"
-- If chronological/trend over dates/months: "line"
-- If parts of a whole (up to 6 categories): "pie"
-- If correlation between two continuous numbers: "scatter"
-- If exactly 1 row with 1 aggregate value: "kpi"
-- If complex multi-dimensional table not easily visualizable: "table"
+Visualization Selection Rules:
+- "kpi": Exactly 1 aggregate summary value or 1 row result with key metric.
+- "bar": Discrete categorical or temporal categories compared against numeric values.
+- "line": Trend or chronological sequence over date/time or ordered numeric X-axis.
+- "pie": Proportions of a whole (only when categorical X has 6 or fewer unique items and positive Y values).
+- "scatter": Correlation between two numeric columns.
+- "table": Complex multi-dimensional data, text-heavy data, or when data is not suitable for 1D/2D charts.
 
 Return ONLY valid JSON.
 """
@@ -421,18 +427,28 @@ Return ONLY valid JSON.
     txt = re.sub(r"\s*```$", "", txt)
     usage = extract_usage(res)
     
+    llm_type = "table"
+    llm_config = {}
+    summary = "Analysis completed."
+
     try:
         obj = json.loads(txt)
-        return {
-            "analyst_summary": obj.get("summary", "Analysis completed."),
-            "chart_type": obj.get("chart_type", "table"),
-            "chart_config": obj.get("chart_config", {}),
-            **add_usage(state, usage)
-        }
+        summary = obj.get("summary", "Analysis completed.")
+        llm_type = obj.get("chart_type", "table")
+        llm_config = obj.get("chart_config", {})
     except Exception:
-        return {
-            "analyst_summary": "Query executed and returned data.",
-            "chart_type": "table",
-            "chart_config": {},
-            **add_usage(state, usage)
-        }
+        summary = "Query executed and returned data."
+
+    final_type, final_config = validate_and_normalize_chart_config(
+        df=df,
+        llm_rec_type=llm_type,
+        llm_config=llm_config,
+        question=state['question']
+    )
+
+    return {
+        "analyst_summary": summary,
+        "chart_type": final_type,
+        "chart_config": final_config,
+        **add_usage(state, usage)
+    }

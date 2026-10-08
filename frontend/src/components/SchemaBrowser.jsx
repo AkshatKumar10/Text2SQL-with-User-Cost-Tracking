@@ -244,44 +244,54 @@ export function SchemaBrowser({ schemaData, onDelete }) {
               )}
             </div>
             {totalPages > 1 && (
-              <div className="flex items-center justify-between pt-2">
-                <button
-                  onClick={() =>
-                    setCurrentPage((page) =>
-                      Math.max(page - 1, 1)
-                    )
-                  }
-                  disabled={currentPage === 1}
-                  className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs font-medium text-slate-300 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-30 cursor-pointer"
-                >
-                  Previous
-                </button>
-                <span className="text-xs text-slate-500">
-                  Page{' '}
+              <div className="flex items-center justify-between border-t border-slate-800/70 pt-4">
+                <p className="text-xs text-slate-500">
+                  Showing{' '}
                   <span className="font-medium text-slate-300">
-                    {currentPage}
-                  </span>{' '}
-                  of{' '}
-                  <span className="font-medium text-slate-300">
-                    {totalPages}
+                    {(currentPage - 1) * TABLES_PER_PAGE + 1}
                   </span>
-                </span>
-                <button
-                  onClick={() =>
-                    setCurrentPage((page) =>
-                      Math.min(
-                        page + 1,
-                        totalPages
+                  {' - '}
+                  <span className="font-medium text-slate-300">
+                    {Math.min(
+                      currentPage * TABLES_PER_PAGE,
+                      filtered.length
+                    )}
+                  </span>
+                  {' of '}
+                  <span className="font-medium text-slate-300">
+                    {filtered.length}
+                  </span>
+                </p>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() =>
+                      setCurrentPage((page) =>
+                        Math.max(page - 1, 1)
                       )
-                    )
-                  }
-                  disabled={
-                    currentPage === totalPages
-                  }
-                  className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs font-medium text-slate-300 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-30 cursor-pointer"
-                >
-                  Next
-                </button>
+                    }
+                    disabled={currentPage === 1}
+                    className="flex h-8 items-center justify-center rounded-lg border border-slate-800 bg-slate-950/40 px-3 text-xs font-medium text-slate-400 transition-all hover:border-slate-700 hover:bg-slate-800/50 hover:text-slate-200 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Previous
+                  </button>
+
+                  <div className="flex h-8 min-w-8 items-center justify-center rounded-lg border border-blue-500/20 bg-blue-500/[0.08] px-2 text-xs font-semibold text-blue-300">
+                    {currentPage}
+                  </div>
+
+                  <button
+                    onClick={() =>
+                      setCurrentPage((page) =>
+                        Math.min(page + 1, totalPages)
+                      )
+                    }
+                    disabled={currentPage === totalPages}
+                    className="flex h-8 items-center justify-center rounded-lg border border-slate-800 bg-slate-950/40 px-3 text-xs font-medium text-slate-400 transition-all hover:border-slate-700 hover:bg-slate-800/50 hover:text-slate-200 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Next
+                  </button>
+                </div>
               </div>
             )}
           </div>

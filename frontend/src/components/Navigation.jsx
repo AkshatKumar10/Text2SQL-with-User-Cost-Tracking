@@ -9,6 +9,7 @@ import {
   User,
   LayoutDashboard,
   ChevronRight,
+  History,
 } from 'lucide-react';
 import { useGoogleLogin } from '@react-oauth/google';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -42,7 +43,7 @@ export function Navigation({
     {
       id: 'agent',
       path: '/query',
-      label: 'AI Query Studio',
+      label: 'AI Query',
       description: 'Ask your database',
       icon: Sparkles,
     },
@@ -73,6 +74,13 @@ export function Navigation({
       label: 'Import Data',
       description: 'CSV, Excel & JSON',
       icon: UploadCloud,
+    },
+    {
+      id: 'history',
+      path: '/history',
+      label: 'Query History',
+      description: 'Past queries & sessions',
+      icon: History,
     },
   ];
 

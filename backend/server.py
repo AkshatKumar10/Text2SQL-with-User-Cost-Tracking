@@ -14,8 +14,8 @@ from dotenv import load_dotenv
 import jwt
 import requests
 from database import (
-    get_schema, init_db, run_sql, DB_PATH, APP_DB_PATH, import_df, clean_table,
-    ensure_meta_tables, get_or_create_user, get_user_by_id, log_user_query, get_user_dashboard_stats, delete_table, get_schema_details
+    get_schema, run_sql, DB_PATH, import_df, clean_table, get_or_create_user, get_user_by_id, log_user_query, get_user_dashboard_stats, delete_table, get_schema_details,
+    get_user_history, clear_user_history
 )
 from agents.workflow import build_workflow
 from langfuse.langchain import CallbackHandler
@@ -121,7 +121,6 @@ def health():
 
 @app.post("/api/auth/google")
 def google_auth(req: GoogleAuthReq):
-    print(req)
     token_val = req.credential or req.id_token or req.access_token
     if not token_val:
         raise HTTPException(status_code=400, detail="Missing Google token")
@@ -184,12 +183,41 @@ def get_current_user(current_user: Dict[str, Any] = Depends(require_auth)):
     return {"status": "success", "user": current_user}
 
 @app.get("/api/user/dashboard")
-def get_user_dashboard(current_user: Dict[str, Any] = Depends(require_auth)):
-    user_id = current_user["id"]
-    stats = get_user_dashboard_stats(user_id)
-    if not stats:
+def get_user_dashboard(
+    page: int = 1,
+    limit: int = 10,
+    current_user: Dict[str, Any] = Depends(require_auth)
+):
+    result = get_user_dashboard_stats(
+        current_user["id"],
+        page=page,
+        limit=limit
+    )
+    if not result:
         raise HTTPException(status_code=404, detail="User dashboard data not found")
-    return {"status": "success", **stats}
+    return {"status": "success", **result}
+
+@app.get("/api/user/history")
+def fetch_user_history(
+    page: int = 1,
+    limit: int = 10,
+    current_user: Dict[str, Any] = Depends(require_auth)
+):
+    result = get_user_history(
+        current_user["id"],
+        page=page,
+        limit=limit
+    )
+
+    return {
+        "status": "success",
+        **result
+    }
+
+@app.delete("/api/user/history")
+def purge_user_history(current_user: Dict[str, Any] = Depends(require_auth)):
+    clear_user_history(current_user["id"])
+    return {"status": "success", "message": "History cleared."}
 
 @app.get("/api/schema")
 def fetch_schema(

@@ -8,7 +8,7 @@ The system uses **LangGraph** to orchestrate multiple AI agents and includes **a
 
 ## 🚀 Features
 
-### 🤖 AI Query Studio
+### 🤖 AI Query 
 
 * Ask questions about your database using natural language.
 * Automatically understands the available database schema.
@@ -59,7 +59,7 @@ The self-repair loop allows the system to detect SQL or schema-related errors an
 
 ## 📊 Business Intelligence & Visualization
 
-The AI Query Studio can transform query results into meaningful business insights.
+The AI Query can transform query results into meaningful business insights.
 
 ### Supported Visualizations
 
@@ -85,7 +85,7 @@ Users can upload their own datasets and make them available for querying.
 .json
 ```
 
-After ingestion, the new tables become available to the AI Query Studio and SQL Console.
+After ingestion, the new tables become available to the AI Query and SQL Console.
 
 ---
 
@@ -110,7 +110,7 @@ The application provides a separate SQL Console for users who want to manually w
 
 The two modes have different purposes:
 
-### AI Query Studio
+### AI Query
 
 ```text
 Natural Language
