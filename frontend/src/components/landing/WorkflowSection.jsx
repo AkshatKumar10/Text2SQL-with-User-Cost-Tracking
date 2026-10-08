@@ -12,25 +12,25 @@ export default function WorkflowSection() {
       number: "01",
       icon: Sparkles,
       title: "Ask",
-      text: "Describe what you want to know using natural language.",
+      text: "Ask a question about your data using natural language.",
     },
     {
       number: "02",
       icon: BrainCircuit,
       title: "Generate",
-      text: "AI understands your database schema and generates the SQL needed to answer it.",
+      text: "AI checks your question against the database schema and generates the SQL query.",
     },
     {
       number: "03",
       icon: Zap,
       title: "Execute",
-      text: "The query runs against your data, with failed queries automatically repaired when possible.",
+      text: "The SQL is validated and automatically repaired when needed before running against your data.",
     },
     {
       number: "04",
       icon: BarChart3,
       title: "Understand",
-      text: "Get the result as a table, visualization or useful data summary.",
+      text: "Get your results as a table, visualization, and concise data summary.",
     },
   ];
 
@@ -51,7 +51,7 @@ export default function WorkflowSection() {
             </h2>
 
             <p className="mt-5 max-w-sm text-sm leading-7 text-[#6f7782]">
-              You don't need to know SQL. TextQuery turns your question into an
+              You don't need to know SQL. Text2SQL turns your question into an
               executable query and presents the result in a way that's easy to
               understand.
             </p>
@@ -67,15 +67,13 @@ export default function WorkflowSection() {
                 return (
                   <div
                     key={step.number}
-                    className={`group relative flex min-h-[230px] flex-col sm:px-5 ${
-                      index === 0
-                        ? "sm:pl-0"
-                        : ""
-                    } ${
-                      index === workflow.length - 1
+                    className={`group relative flex min-h-[230px] flex-col sm:px-5 ${index === 0
+                      ? "sm:pl-0"
+                      : ""
+                      } ${index === workflow.length - 1
                         ? "sm:pr-0"
                         : ""
-                    }`}
+                      }`}
                   >
                     <div className="relative z-10 flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-white/[0.08] bg-[#080a0e] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-all duration-500 group-hover:-translate-y-0.5 group-hover:border-blue-400/30 group-hover:bg-[#0b0f16] group-hover:shadow-[0_0_35px_rgba(59,130,246,0.10)]">
                       <div className="absolute -inset-3 -z-10 rounded-2xl bg-blue-500/[0.08] opacity-0 blur-xl transition-opacity duration-500 group-hover:opacity-100" />

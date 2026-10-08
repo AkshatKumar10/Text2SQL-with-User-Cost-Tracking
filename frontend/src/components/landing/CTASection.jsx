@@ -21,7 +21,7 @@ export default function CTASection({
           </h2>
 
           <p className="mx-auto mt-5 max-w-lg text-sm leading-7 text-[#707680]">
-            Ask your first question and see what TextQuery can find.
+            Ask your first question and see what Text2SQL can find.
           </p>
 
           <button
