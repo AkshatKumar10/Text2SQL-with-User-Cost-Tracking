@@ -46,7 +46,7 @@ export function DatasetUpload({
     }
   };
 
-  const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
+  const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
   const selectFile = (selected) => {
     if (selected.size > MAX_FILE_SIZE) {
@@ -61,7 +61,7 @@ export function DatasetUpload({
 
     setFile(selected);
     setUploadStatus(null);
-    
+
     const fileName = selected.name
       .replace(/\.[^/.]+$/, '')
       .trim();
@@ -84,6 +84,7 @@ export function DatasetUpload({
 
   const handleUpload = async () => {
     if (!file || uploading) return;
+
     setUploading(true);
     setUploadStatus(null);
 
@@ -103,45 +104,54 @@ export function DatasetUpload({
           'Content-Type': 'multipart/form-data',
         },
       });
+
       const data = response.data;
+
       setUploadStatus({
         success: true,
         message: data.message,
         data: data,
       });
+
       if (onUploadSuccess) {
         await onUploadSuccess(data);
       }
+
       onClose();
     } catch (err) {
       const errorMessage =
         err.response?.data?.detail ||
         'Failed to upload file. Please try again.';
+
       setUploadStatus({
         success: false,
         message: errorMessage,
       });
+
       setUploading(false);
     }
   };
 
   return (
-    <main className="w-full relative text-slate-100 ">
-      <div className="absolute top-10 right-20 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-20 left-10 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="max-w-7xl mx-auto space-y-8 relative z-10">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/80 pb-6">
-          <div className="flex items-center gap-4">
-            <div className="p-3.5 rounded-2xl bg-gradient-to-br from-blue-500/20 to-indigo-500/10 text-blue-400 border border-blue-500/30 shadow-lg shadow-blue-500/10">
-              <UploadCloud className="w-7 h-7 animate-pulse" />
+    <main className="relative w-full min-w-0 overflow-hidden px-3 pb-8 text-slate-100 sm:px-4 lg:px-6">
+      <div className="pointer-events-none absolute right-[-8rem] top-10 h-64 w-64 rounded-full bg-blue-500/10 blur-3xl sm:right-20 sm:h-96 sm:w-96" />
+      <div className="pointer-events-none absolute bottom-20 left-[-8rem] h-64 w-64 rounded-full bg-indigo-500/10 blur-3xl sm:left-10 sm:h-96 sm:w-96" />
+
+      <div className="relative z-10 mx-auto w-full max-w-7xl space-y-5 sm:space-y-6 lg:space-y-8">
+        <div className="flex flex-col gap-4 border-b border-slate-800/80 pb-5 sm:pb-6">
+          <div className="flex min-w-0 items-start gap-3 sm:gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-blue-500/30 bg-gradient-to-br from-blue-500/20 to-indigo-500/10 text-blue-400 shadow-lg shadow-blue-500/10 sm:h-14 sm:w-14 sm:rounded-2xl">
+              <UploadCloud className="h-5 w-5 animate-pulse sm:h-7 sm:w-7" />
             </div>
-            <div>
-              <div className="flex items-center gap-2.5">
-                <h1 className="text-2xl font-bold text-white tracking-tight">
+
+            <div className="min-w-0 flex-1 pr-1">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <h1 className="truncate text-xl font-bold tracking-tight text-white sm:text-2xl">
                   Dataset Import
                 </h1>
               </div>
-              <p className="text-sm text-slate-400 mt-1">
+
+              <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400 sm:text-sm sm:leading-6">
                 Upload structured data files to instantly transform
                 them into queryable SQLite tables
               </p>
@@ -149,20 +159,22 @@ export function DatasetUpload({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          <div className="lg:col-span-7 bg-slate-900/40 backdrop-blur-xl p-6 sm:p-8 rounded-3xl border border-slate-800/80 shadow-2xl space-y-6">
-            <div className="grid grid-cols-3 gap-2.5">
-              <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-950/60 border border-slate-800 text-slate-300 text-xs font-medium">
-                <FileText className="w-3.5 h-3.5 text-blue-400" />
-                <span>.CSV Files</span>
+        <div className="grid min-w-0 grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-12 lg:gap-8">
+          <div className="min-w-0 space-y-5 rounded-2xl border border-slate-800/80 bg-slate-900/40 p-4 shadow-2xl backdrop-blur-xl sm:space-y-6 sm:rounded-3xl sm:p-6 lg:col-span-7 lg:p-8">
+            <div className="grid grid-cols-1 gap-2.5 min-[451px]:grid-cols-3">
+              <div className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs font-medium text-slate-300">
+                <FileText className="h-3.5 w-3.5 shrink-0 text-blue-400" />
+                <span className="truncate">.CSV Files</span>
               </div>
-              <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-950/60 border border-slate-800 text-slate-300 text-xs font-medium">
-                <Sheet className="w-3.5 h-3.5 text-emerald-400" />
-                <span>.XLSX Excel</span>
+
+              <div className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs font-medium text-slate-300">
+                <Sheet className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                <span className="truncate">.XLSX Excel</span>
               </div>
-              <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-950/60 border border-slate-800 text-slate-300 text-xs font-medium">
-                <FileCode className="w-3.5 h-3.5 text-amber-400" />
-                <span>.JSON Data</span>
+
+              <div className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs font-medium text-slate-300">
+                <FileCode className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+                <span className="truncate">.JSON Data</span>
               </div>
             </div>
 
@@ -172,12 +184,13 @@ export function DatasetUpload({
               onDragOver={handleDrag}
               onDrop={handleDrop}
               onClick={() => fileInputRef.current?.click()}
-              className={`relative border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all overflow-hidden group ${dragActive
-                ? 'border-blue-400 bg-blue-950/30 scale-[1.01]'
-                : file
-                  ? 'border-emerald-500/50 bg-emerald-950/10'
-                  : 'border-slate-700/80 hover:border-blue-500/50 bg-slate-950/40 hover:bg-slate-900/50'
-                }`}
+              className={`relative overflow-hidden rounded-2xl border-2 border-dashed p-5 text-center transition-all sm:p-8 ${
+                dragActive
+                  ? 'border-blue-400 bg-blue-950/30 scale-[1.01]'
+                  : file
+                    ? 'border-emerald-500/50 bg-emerald-950/10'
+                    : 'border-slate-700/80 bg-slate-950/40 hover:border-blue-500/50 hover:bg-slate-900/50'
+              } cursor-pointer group`}
             >
               <input
                 ref={fileInputRef}
@@ -191,34 +204,39 @@ export function DatasetUpload({
                 }}
               />
 
-              <div className="flex flex-col items-center relative z-10 p-4">
+              <div className="relative z-10 flex flex-col items-center p-2 sm:p-4">
                 {file ? (
                   <>
-                    <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mb-3 text-emerald-400 shadow-inner">
-                      <FileText className="w-7 h-7 animate-bounce" />
+                    <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 shadow-inner sm:h-14 sm:w-14">
+                      <FileText className="h-6 w-6 animate-bounce sm:h-7 sm:w-7" />
                     </div>
-                    <span className="text-sm font-semibold text-slate-100">
+
+                    <span className="max-w-full truncate px-2 text-sm font-semibold text-slate-100">
                       {file.name}
                     </span>
-                    <span className="text-xs text-slate-400 mt-1 font-mono bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+
+                    <span className="mt-1 rounded border border-slate-800 bg-slate-900 px-2 py-0.5 font-mono text-[10px] text-slate-400 sm:text-xs">
                       {formatFileSize(file.size)}
                     </span>
-                    <span className="text-xs text-blue-400 mt-3 font-medium hover:underline">
+
+                    <span className="mt-3 text-xs font-medium text-blue-400 hover:underline">
                       Click or drop to change file
                     </span>
                   </>
                 ) : (
                   <>
-                    <div className="w-14 h-14 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center mb-3 text-slate-400 group-hover:text-blue-400 group-hover:border-blue-500/30 transition shadow-inner">
-                      <UploadCloud className="w-7 h-7 transition-transform group-hover:-translate-y-1" />
+                    <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-800 bg-slate-900 text-slate-400 shadow-inner transition group-hover:border-blue-500/30 group-hover:text-blue-400 sm:h-14 sm:w-14">
+                      <UploadCloud className="h-6 w-6 transition-transform group-hover:-translate-y-1 sm:h-7 sm:w-7" />
                     </div>
-                    <span className="text-sm font-medium text-slate-200">
+
+                    <span className="text-xs font-medium leading-5 text-slate-200 sm:text-sm">
                       Drag and drop your file here, or{' '}
-                      <span className="text-blue-400 font-semibold underline underline-offset-2">
+                      <span className="font-semibold text-blue-400 underline underline-offset-2">
                         browse files
                       </span>
                     </span>
-                    <span className="text-xs text-slate-500 mt-1.5">
+
+                    <span className="mt-1.5 text-[11px] leading-5 text-slate-500 sm:text-xs">
                       Supports CSV, Excel and JSON files up to
                       50MB
                     </span>
@@ -228,10 +246,11 @@ export function DatasetUpload({
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-2">
-                <Database className="w-3.5 h-3.5 text-blue-400" />
+              <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-300">
+                <Database className="h-3.5 w-3.5 shrink-0 text-blue-400" />
                 <span>SQL Table Name</span>
               </label>
+
               <div className="relative">
                 <input
                   type="text"
@@ -240,10 +259,11 @@ export function DatasetUpload({
                     setTableName(e.target.value)
                   }
                   placeholder="e.g. sales_leads_2024"
-                  className="w-full px-4 py-3 rounded-xl bg-slate-950/90 border border-slate-800 text-blue-300 font-mono text-xs focus:outline-none focus:border-blue-500 transition shadow-inner"
+                  className="w-full min-w-0 rounded-xl border border-slate-800 bg-slate-950/90 px-3 py-3 font-mono text-xs text-blue-300 shadow-inner transition focus:border-blue-500 focus:outline-none sm:px-4"
                 />
               </div>
-              <p className="text-xs text-slate-500 mt-1">
+
+              <p className="mt-1 text-[11px] leading-5 text-slate-500 sm:text-xs sm:leading-6">
                 The AI agents will directly reference this table
                 when writing SQL queries.
               </p>
@@ -251,62 +271,66 @@ export function DatasetUpload({
 
             {uploadStatus && (
               <div
-                className={`p-4 rounded-xl border text-xs flex items-start gap-3 animate-fadeIn ${uploadStatus.success
-                  ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
-                  : 'bg-rose-950/40 border-rose-500/30 text-rose-300'
-                  }`}
+                className={`flex items-start gap-3 rounded-xl border p-3 text-xs animate-fadeIn sm:p-4 ${
+                  uploadStatus.success
+                    ? 'border-emerald-500/30 bg-emerald-950/40 text-emerald-300'
+                    : 'border-rose-500/30 bg-rose-950/40 text-rose-300'
+                }`}
               >
                 {uploadStatus.success ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
                 ) : (
-                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />
                 )}
-                <div>
-                  <span className="font-semibold block mb-0.5 text-xs">
+
+                <div className="min-w-0">
+                  <span className="mb-0.5 block text-xs font-semibold">
                     {uploadStatus.success
                       ? 'Uploaded Successfully!'
                       : 'Upload Failed'}
                   </span>
-                  <span className="opacity-90">
+
+                  <span className="break-words opacity-90">
                     {uploadStatus.message}
                   </span>
                 </div>
               </div>
             )}
 
-            <div className="flex items-center justify-end pt-4 border-t border-slate-800/80">
+            <div className="flex items-center justify-end border-t border-slate-800/80 pt-4">
               <button
                 onClick={handleUpload}
                 disabled={!file || uploading}
-                className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-400 hover:to-indigo-500 text-white font-semibold text-xs shadow-lg shadow-blue-500/20 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:from-blue-400 hover:to-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 min-[451px]:w-auto min-[451px]:px-6"
               >
                 {uploading ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <Loader2 className="h-4 w-4 animate-spin" />
                     <span>Ingesting Data...</span>
                   </>
                 ) : (
                   <>
-                    <Sparkles className="w-3.5 h-3.5" />
+                    <Sparkles className="h-3.5 w-3.5" />
                     <span>Import Table</span>
-                    <ArrowRight className="w-4 h-4 ml-1" />
+                    <ArrowRight className="ml-1 h-4 w-4" />
                   </>
                 )}
               </button>
             </div>
           </div>
 
-          <div className="lg:col-span-5 space-y-6">
-
-            <div className="bg-slate-900/40 backdrop-blur-xl p-6 rounded-3xl border border-slate-800/80 shadow-xl space-y-5">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                  <Layers className="w-5 h-5" />
+          <div className="min-w-0 space-y-5 lg:col-span-5 lg:space-y-6">
+            <div className="space-y-5 rounded-2xl border border-slate-800/80 bg-slate-900/40 p-4 shadow-xl backdrop-blur-xl sm:rounded-3xl sm:p-6">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-indigo-500/20 bg-indigo-500/10 text-indigo-400">
+                  <Layers className="h-5 w-5" />
                 </div>
-                <div>
+
+                <div className="min-w-0">
                   <h3 className="text-sm font-bold text-white">
                     What happens after import?
                   </h3>
+
                   <p className="text-xs text-slate-400">
                     Pipeline execution flow
                   </p>
@@ -314,45 +338,49 @@ export function DatasetUpload({
               </div>
 
               <div className="space-y-3.5 text-xs text-slate-300">
-
-                <div className="flex items-start gap-3 px-4 py-4 rounded-xl bg-slate-950/50 border border-slate-800/60">
-                  <span className="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 font-mono text-[10px] flex items-center justify-center shrink-0 mt-0.5 font-bold">
+                <div className="flex items-start gap-3 rounded-xl border border-slate-800/60 bg-slate-950/50 px-3 py-3 sm:px-4 sm:py-4">
+                  <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-500/20 font-mono text-[10px] font-bold text-blue-400">
                     01
                   </span>
-                  <div>
-                    <strong className="text-white block mb-0.5">
+
+                  <div className="min-w-0">
+                    <strong className="mb-0.5 block text-white">
                       Dataset ingestion
                     </strong>
-                    <span className="text-slate-400">
+
+                    <span className="leading-5 text-slate-400">
                       Your file is parsed and loaded into the application's SQLite database.
                     </span>
                   </div>
                 </div>
 
-                <div className="flex items-start gap-3 px-4 py-4 rounded-xl bg-slate-950/50 border border-slate-800/60">
-                  <span className="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 font-mono text-[10px] flex items-center justify-center shrink-0 mt-0.5 font-bold">
+                <div className="flex items-start gap-3 rounded-xl border border-slate-800/60 bg-slate-950/50 px-3 py-3 sm:px-4 sm:py-4">
+                  <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-500/20 font-mono text-[10px] font-bold text-blue-400">
                     02
                   </span>
 
-                  <div>
-                    <strong className="text-white block mb-0.5">
+                  <div className="min-w-0">
+                    <strong className="mb-0.5 block text-white">
                       Schema discovery
                     </strong>
-                    <span className="text-slate-400">
+
+                    <span className="leading-5 text-slate-400">
                       Table columns and data types become available to the query system.
                     </span>
                   </div>
                 </div>
 
-                <div className="flex items-start gap-3 px-4 py-4 rounded-xl bg-slate-950/50 border border-slate-800/60">
-                  <span className="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 font-mono text-[10px] flex items-center justify-center shrink-0 mt-0.5 font-bold">
+                <div className="flex items-start gap-3 rounded-xl border border-slate-800/60 bg-slate-950/50 px-3 py-3 sm:px-4 sm:py-4">
+                  <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-500/20 font-mono text-[10px] font-bold text-blue-400">
                     03
                   </span>
-                  <div>
-                    <strong className="text-white block mb-0.5">
+
+                  <div className="min-w-0">
+                    <strong className="mb-0.5 block text-white">
                       Natural language querying
                     </strong>
-                    <span className="text-slate-400">
+
+                    <span className="leading-5 text-slate-400">
                       Ask questions about the dataset and the Text2SQL agents can generate SQL.
                     </span>
                   </div>
@@ -360,26 +388,27 @@ export function DatasetUpload({
               </div>
             </div>
 
-            <div className="bg-slate-900/40 backdrop-blur-xl p-6 rounded-3xl border border-slate-800/80 shadow-xl space-y-4">
-
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  <ShieldCheck className="w-5 h-5" />
+            <div className="space-y-4 rounded-2xl border border-slate-800/80 bg-slate-900/40 p-4 shadow-xl backdrop-blur-xl sm:rounded-3xl sm:p-6">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-400">
+                  <ShieldCheck className="h-5 w-5" />
                 </div>
-                <div>
+
+                <div className="min-w-0">
                   <h3 className="text-sm font-bold text-white">
                     Naming Conventions
                   </h3>
+
                   <p className="text-xs text-slate-400">
                     Tips for seamless AI recognition
                   </p>
                 </div>
               </div>
 
-              <p className="text-xs text-slate-400 leading-relaxed">
+              <p className="text-xs leading-5 text-slate-400 sm:leading-relaxed">
                 Use lowercase characters and underscores for table names
                 (e.g.{' '}
-                <code className="text-blue-300 font-mono bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">
+                <code className="rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 font-mono text-blue-300">
                   customer_orders
                 </code>
                 ). Avoid spaces or special symbols to ensure maximum

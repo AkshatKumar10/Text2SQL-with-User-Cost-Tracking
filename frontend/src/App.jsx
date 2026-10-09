@@ -73,14 +73,21 @@ export function App() {
 
   useEffect(() => {
     fetchSchema();
-    if (authToken) {
-      verifyUserSession(authToken);
-      if (location.pathname === '/history') {
-        fetchUserHistory(1);
-      }
-    } else {
+  }, []);
+
+  useEffect(() => {
+    if (!authToken) {
       setUser(null);
       setHistory([]);
+      return;
+    }
+
+    verifyUserSession();
+  }, [authToken]);
+
+  useEffect(() => {
+    if (authToken && location.pathname === '/history') {
+      fetchUserHistory(1);
     }
   }, [authToken, location.pathname]);
 
@@ -348,8 +355,8 @@ export function App() {
         googleClientId={googleClientId}
       />
       <main
-        className={`flex-1 w-full mx-auto px-4 sm:px-6 lg:px-8 pt-8 relative z-10 ${user
-          ? 'ml-[250px] max-w-[calc(100%-250px)]'
+        className={`flex-1 w-full min-w-0 mx-auto px-4 sm:px-6 lg:px-8 pt-8 relative z-10 ${user
+          ? 'ml-0 max-w-full lg:ml-[250px] lg:max-w-[calc(100%-250px)]'
           : 'max-w-7xl'
           }`}
       >
@@ -357,41 +364,49 @@ export function App() {
           <Route
             path="/"
             element={
-              <LandingPage
-                onTryFree={() => navigate('/guest')}
-              />
+              authToken ? (
+                <Navigate to="/query" replace />
+              ) : (
+                <LandingPage
+                  onTryFree={() => navigate('/guest')}
+                />
+              )
             }
           />
           <Route
             path="/guest"
             element={
-              <GuestPage
-                question={question}
-                setQuestion={setQuestion}
-                loading={loading}
-                error={error}
-                currentResult={currentResult}
-                setCurrentResult={setCurrentResult}
-                activeResultTab={activeResultTab}
-                setActiveResultTab={
-                  setActiveResultTab
-                }
-                onSubmit={(q) =>
-                  handleSubmit(q, true)
-                }
-                user={user}
-                starters={starters}
-                onGoogleSuccess={
-                  handleGoogleSuccess
-                }
-                onGoogleError={
-                  handleGoogleError
-                }
-                googleClientId={
-                  googleClientId
-                }
-                schemaData={schemaData}
-              />
+              authToken ? (
+                <Navigate to="/query" replace />
+              ) : (
+                <GuestPage
+                  question={question}
+                  setQuestion={setQuestion}
+                  loading={loading}
+                  error={error}
+                  currentResult={currentResult}
+                  setCurrentResult={setCurrentResult}
+                  activeResultTab={activeResultTab}
+                  setActiveResultTab={
+                    setActiveResultTab
+                  }
+                  onSubmit={(q) =>
+                    handleSubmit(q, true)
+                  }
+                  user={user}
+                  starters={starters}
+                  onGoogleSuccess={
+                    handleGoogleSuccess
+                  }
+                  onGoogleError={
+                    handleGoogleError
+                  }
+                  googleClientId={
+                    googleClientId
+                  }
+                  schemaData={schemaData}
+                />
+              )
             }
           />
           <Route
