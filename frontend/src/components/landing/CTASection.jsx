@@ -30,7 +30,7 @@ export default function CTASection({
             <div className="h-px w-6 shrink-0 bg-white/[0.07] sm:w-8" />
 
             <span className="whitespace-nowrap text-[8px] font-medium uppercase tracking-[0.12em] text-[#414750] sm:tracking-[0.16em]">
-              Query · Analyze · Understand
+              Query · Analyze · Track Costs
             </span>
 
             <div className="h-px w-6 shrink-0 bg-white/[0.07] sm:w-8" />

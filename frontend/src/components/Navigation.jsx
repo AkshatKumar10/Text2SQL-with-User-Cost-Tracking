@@ -131,7 +131,7 @@ export function Navigation({
                 </div>
 
                 <div className="mt-1 text-[12px] tracking-wide text-slate-400">
-                  Query. Analyze. Understand.
+                  Query. Analyze. Track Costs.
                 </div>
               </div>
             </div>
@@ -269,7 +269,7 @@ export function Navigation({
               </div>
 
               <div className="text-[12px] text-slate-400">
-                Query. Analyze. Understand.
+                Query. Analyze. Track Costs.
               </div>
             </div>
           </button>
